@@ -151,6 +151,44 @@ The `themeHue` in `custom.ts` is referenced by `plugins/theme.client.ts` but the
 
 ---
 
+## Multiply Positions (Leveraged Looping)
+
+The multiply feature creates leveraged positions in a single atomic transaction. euler-lite already has a full implementation for standard token-to-token multiplies.
+
+### Existing Multiply Architecture
+
+| Component | File | Purpose |
+|---|---|---|
+| Form logic | `composables/borrow/useMultiplyForm.ts` | Multiplier slider, quote fetching, debt calculation |
+| EVC batch builder | `composables/useEulerOperations/vault.ts` → `buildMultiplyPlan()` | Constructs the full EVC batch: deposit → enableController → enableCollateral → borrow → swap → verify → deposit |
+| Position multiply page | `pages/position/[number]/multiply.vue` | UI for increasing leverage on existing positions |
+| Leverage math | `utils/leverage.ts` | `getMaxMultiplier(borrowLTV)` — max = `1/(1-LTV)` minus 50bps safety |
+| Swap quotes | `composables/useSwapQuotesParallel.ts` | Parallel quote fetching from swap providers |
+| Swap API client | `composables/useSwapApi.ts` | HTTP client to Euler Swap API (`/swaps`, `/providers`) |
+| Swap verification | `composables/useEulerOperations/swaps/verify.ts` | `verifyAmountMinAndSkim` / `verifyDebtMax` / `verifyAmountMinAndTransfer` |
+
+The standard flow: borrow → send to Swapper → Swapper.multicall (executes DEX route) → SwapVerifier.verify → output deposited as collateral. All inside one EVC `batch()` call.
+
+### Balancer BPT Multiply via Enso
+
+For Balancer BPT vaults on Monad, the "swap" step is not a DEX trade — it's a Balancer V3 `addLiquidityUnbalanced` call (wMON → BPT). This is handled via **Enso's Bundle API** (`https://api.enso.build`), which composes flashloan + Balancer zap + Euler deposit/borrow into a single atomic transaction.
+
+**Enso** (docs: https://docs.enso.build, index: https://docs.enso.build/llms.txt) is a DeFi action bundling API. Key endpoints:
+- `GET /api/v1/shortcuts/route` — optimal route between two tokens (swap)
+- `POST /api/v1/shortcuts/bundle` — compose multiple DeFi actions atomically (deposit, borrow, flashloan, route)
+- `GET /api/v1/protocols?chainId=X` — list supported protocols on a chain
+
+Enso supports Morpho flashloans on Monad (0% fee). Full implementation spec in `balancer-contracts/zap.md`.
+
+**Key decision:** Whether Enso supports Euler V2 as a protocol on Monad determines the architecture:
+- **Architecture A (Enso Bundle):** Enso orchestrates everything — no custom smart contracts needed
+- **Architecture B (EVC Batch + Enso Route):** EVC batch for Euler ops, Enso `/route` for the BPT zap only
+- **Architecture C (Custom Handler):** Fallback — build `BalancerBptHandler.sol` for Euler's Swapper framework
+
+See `balancer-contracts/zap.md` for full spec and `TODO.md` for task tracking.
+
+---
+
 ## Gotchas
 
 1. **No RPC env = crash.** The wagmi plugin throws if zero `RPC_URL_HTTP_*` vars are set.

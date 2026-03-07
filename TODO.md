@@ -155,6 +155,33 @@ The critical path item. Without this, the frontend shows zero vaults.
 - [ ] **`logo/balancer.svg`** — source from Balancer brand assets
 - [ ] **`logo/euler.svg`** — source from Euler brand assets
 
+### Multiply Position — Enso Bundle Integration
+
+The core product feature: one-click leveraged BPT positions. Uses Enso's Bundle API to compose flashloan + Balancer V3 zap + Euler deposit/borrow into a single atomic transaction. Full spec in `balancer-contracts/zap.md`.
+
+**Phase 1: Validate Enso on Monad (FIRST — gates everything below)**
+
+- [ ] **Check Enso protocol support:** `GET https://api.enso.build/api/v1/protocols?chainId=143` — look for `euler-v2` and `balancer-v3`
+- [ ] **Test Enso route wMON → BPT:** `GET /api/v1/shortcuts/route?chainId=143&tokenIn=WMON&tokenOut=BPT&amountIn=1e18` — confirms Balancer V3 zap works
+- [ ] **Test Enso bundle with Euler V2:** `POST /api/v1/shortcuts/bundle` with `protocol: "euler-v2"` deposit + borrow — confirms Euler V2 is supported
+- [ ] **Decision gate:** Enso supports both → Architecture A. Balancer only → Architecture B (hybrid). Neither → Architecture C (custom handler). See `zap.md` for full decision tree.
+
+**Phase 2: Build Integration (after Phase 1 decision)**
+
+- [ ] **Get Enso API key** at [enso.finance/developers](https://enso.finance/developers) for production use
+- [ ] **Create `server/api/enso/bundle.post.ts`** — Nitro server proxy to Enso Bundle API (keeps API key server-side)
+- [ ] **Create `server/api/enso/route.get.ts`** — Nitro server proxy to Enso Route API
+- [ ] **Create `composables/useEnsoBundle.ts`** — Enso API client composable
+- [ ] **Adapt `useMultiplyForm.ts`** — support Enso bundle path for BPT vault pairs
+- [ ] **Add Enso tx execution path** in `useEulerOperations/execution.ts` (single tx format vs multi-step TxPlan)
+- [ ] **Test multiply flow end-to-end** — deposit wMON, multiply to BPT, verify position
+
+**Phase 3: Unwind (reduce/close position)**
+
+- [ ] **Test reduce multiply** — partial BPT → wMON conversion via Enso route (Balancer `removeLiquiditySingleTokenExactIn`)
+- [ ] **Test full close** — withdraw all BPT collateral, repay all wMON debt
+- [ ] **Verify liquidation path** — confirm liquidation works for BPT-collateralized positions
+
 ### Frontend Patch
 
 Upstream `EulerChains.json` already includes chain 143 (Monad). Verify whether the address injection in `useEulerAddresses.ts` is still needed, or if setting `RPC_URL_HTTP_143` is sufficient.
