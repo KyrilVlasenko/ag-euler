@@ -1,6 +1,8 @@
 # Alpha Growth — Euler Lite Frontend Context
 
-AI context file for the `euler-lite/` frontend. For project overview see `README.md`. For task tracking see `TODO.md`. For contract context see `<partner>-contracts/<partner>-claude.md`.
+AI context file for the **shared** `euler-lite/` frontend. For project overview see `README.md`. For task tracking see `TODO.md`. For contract context see `<partner>-contracts/<partner>-claude.md`.
+
+**Cork has its own frontend:** `euler-lite-cork/` (repo: `rootdraws/ag-euler-lite-cork`). See `euler-lite-cork/euler-lite-claude.md` for Cork-specific context. Everything below applies to the shared frontend used by all other partners.
 
 ---
 
@@ -158,3 +160,4 @@ The `themeHue` in `custom.ts` is referenced by `plugins/theme.client.ts` but the
 5. **SCSS variables vs Tailwind:** The app uses BOTH. SCSS variables in `variables.scss` define the design tokens. Tailwind config in `tailwind.config.js` maps to those CSS variables. Change the SCSS source of truth.
 6. **Entity branding** pulls from the labels repo's `logo/` directory. For custom logos, use a custom labels repo or add files to `public/entities/`.
 7. **Empty labels repo = empty frontend.** `products.json` as `{}` = zero vaults shown. Vault discovery is driven entirely by the labels repo, not the subgraph.
+8. **Cork is a separate frontend.** Do NOT add Cork-specific pages, composables, or logic to the shared `euler-lite/`. Cork's dual-collateral borrow flow lives in `euler-lite-cork/` (forked from `euler-lite/`). If another partner needs deeply custom UX, fork `euler-lite` into `euler-lite-<partner>` rather than polluting the shared codebase.

@@ -37,8 +37,13 @@ interface ICorkPoolManagerLiquidator {
 /// @dev Liquidation flow (all within a single EVC batch):
 ///      1. Account falls below LLTV (85% for vbUSDC/sUSDe).
 ///      2. Outer caller calls liquidate(receiver, sUsdeVault, violator, vbUSDCVault, repay, minYield).
-///      3. _customLiquidation seizes vbUSDC vault shares from violator.
-///      4. _customLiquidation seizes cST vault shares from violator.
+///      3. _customLiquidation seizes cST vault shares first via EVK liquidate(). Because cST
+///         is priced at zero (CSTZeroOracle), EVK's "worthless collateral" path
+///         (Liquidation.sol L155-163) seizes ALL cST shares with zero debt repay.
+///         ORDER MATTERS: cST must be seized while the violator still has non-zero liability,
+///         otherwise EVK returns early (liability == 0 → no-op).
+///      4. _customLiquidation seizes vbUSDC vault shares via standard EVK liquidate() with
+///         price-based discount. This transfers debt from violator to this contract.
 ///      5. Pulls debt to the calling operator via pullDebt.
 ///      6. Redeems both vault share positions for underlying tokens (vbUSDC + cST).
 ///      7. Approves tokens to CorkPoolManager and calls exercise() → receives sUSDe.
@@ -51,11 +56,14 @@ interface ICorkPoolManagerLiquidator {
 /// @dev Prerequisites:
 ///      - Liquidator contract must be whitelisted on the Cork pool (Cork governance action).
 ///      - Caller (liquidator bot) must approve this contract as an EVC operator.
+///      - cST must be a recognized collateral on the liability vault (setLTV called, even
+///        with LTV=0), so that EVK's isRecognizedCollateral check passes.
 ///
 /// @dev Call this contract's liquidate() with collateral = vbUSDCVault. The cST vault
 ///      liquidation is handled internally within _customLiquidation.
 contract CorkProtectedLoopLiquidator is CustomLiquidatorBase {
     using SafeERC20 for IERC20;
+
     /// @notice The CorkPoolManager contract (whitelist-gated).
     address public immutable corkPoolManager;
 
@@ -127,14 +135,28 @@ contract CorkProtectedLoopLiquidator is CustomLiquidatorBase {
         uint256 cstSharesSeized;
 
         // Phase A: Seize collaterals.
+        //
+        // cST MUST be seized before vbUSDC. EVK's Liquidation.sol has an early return:
+        //   if (liqCache.liability.isZero()) return liqCache;   // L101
+        // If vbUSDC is seized first with full repayAssets, the violator's debt drops to zero
+        // and the subsequent cST liquidation becomes a no-op. By seizing cST first (while
+        // the violator still has full liability), EVK's worthless-collateral path activates:
+        //   if (collateralValue == 0) {                         // L155
+        //       liqCache.yieldBalance = collateralBalance;      // L162: seize ALL
+        //       return liqCache;                                // L163: repay stays 0
+        //   }
+        // The sUSDe vault (the violator's controller) executes controlCollateral internally,
+        // so no authorization issue — only the controller can seize, and it does.
         {
-            uint256 refBefore = IEVault(refVault).balanceOf(address(this));
-            IEVault(liability).liquidate(violator, refVault, repayAssets, minYieldBalance);
-            refSharesSeized = IEVault(refVault).balanceOf(address(this)) - refBefore;
-
+            // A.1: Seize ALL cST for free (zero-priced → worthless collateral claim, zero debt transfer).
             uint256 cstBefore = IEVault(cstVault).balanceOf(address(this));
             IEVault(liability).liquidate(violator, cstVault, type(uint256).max, 0);
             cstSharesSeized = IEVault(cstVault).balanceOf(address(this)) - cstBefore;
+
+            // A.2: Seize vbUSDC via standard price-based EVK liquidation (transfers debt).
+            uint256 refBefore = IEVault(refVault).balanceOf(address(this));
+            IEVault(liability).liquidate(violator, refVault, repayAssets, minYieldBalance);
+            refSharesSeized = IEVault(refVault).balanceOf(address(this)) - refBefore;
         }
 
         // Phase B: Pull debt to the calling operator.
@@ -146,23 +168,47 @@ contract CorkProtectedLoopLiquidator is CustomLiquidatorBase {
         );
 
         // Phase C: Redeem shares, exercise in Cork pool, send all proceeds to receiver.
+        //
+        // We seize ALL cST (free claim) but only partial vbUSDC (proportional to the
+        // liquidation discount). Cork's exercise() consumes both cST and vbUSDC at the
+        // pool's swapRate — if we try to exercise more cST than our vbUSDC can cover,
+        // it reverts. Use previewExercise to cap the cST exercise amount.
         {
             uint256 vbUSDCAmount = IEVault(refVault).redeem(refSharesSeized, address(this), address(this));
             uint256 cstAmount = IEVault(cstVault).redeem(cstSharesSeized, address(this), address(this));
 
-            IERC20(vbUSDC).approve(corkPoolManager, vbUSDCAmount);
-            IERC20(cstToken).approve(corkPoolManager, cstAmount);
-            ICorkPoolManagerLiquidator(corkPoolManager).exercise(poolId, cstAmount, address(this));
+            IERC20(vbUSDC).approve(corkPoolManager, type(uint256).max);
+            IERC20(cstToken).approve(corkPoolManager, type(uint256).max);
 
-            uint256 leftover = IERC20(vbUSDC).balanceOf(address(this));
-            if (leftover > 0) IERC20(vbUSDC).safeTransfer(receiver, leftover);
+            uint256 cstToExercise = cstAmount;
+            if (cstAmount > 0) {
+                (, uint256 vbUsdcNeeded,) =
+                    ICorkPoolManagerLiquidator(corkPoolManager).previewExercise(poolId, cstAmount);
+
+                if (vbUsdcNeeded > vbUSDCAmount) {
+                    cstToExercise = cstAmount * vbUSDCAmount / vbUsdcNeeded;
+                }
+
+                if (cstToExercise > 0) {
+                    ICorkPoolManagerLiquidator(corkPoolManager).exercise(poolId, cstToExercise, address(this));
+                }
+            }
         }
 
-        // Transfer all sUSDe to receiver. The calling bot is responsible for repaying
-        // debt in the same EVC batch using these proceeds.
+        // Transfer all remaining tokens to receiver. The calling bot is responsible for
+        // repaying debt in the same EVC batch using the sUSDe proceeds.
         {
             uint256 sUsdeBal = IERC20(sUsdeToken).balanceOf(address(this));
             if (sUsdeBal > 0) IERC20(sUsdeToken).safeTransfer(receiver, sUsdeBal);
+
+            uint256 vbUsdcLeft = IERC20(vbUSDC).balanceOf(address(this));
+            if (vbUsdcLeft > 0) IERC20(vbUSDC).safeTransfer(receiver, vbUsdcLeft);
+
+            uint256 cstLeft = IERC20(cstToken).balanceOf(address(this));
+            if (cstLeft > 0) IERC20(cstToken).safeTransfer(receiver, cstLeft);
+
+            IERC20(vbUSDC).approve(corkPoolManager, 0);
+            IERC20(cstToken).approve(corkPoolManager, 0);
         }
     }
 }

@@ -43,17 +43,39 @@ Do this carefully — nothing should break.
 
 Contracts deployed and verified. Labels live at `rootdraws/ag-euler-cork-labels`. Frontend at [cork.alphagrowth.fun](https://cork.alphagrowth.fun).
 
-### Post-Deployment
+### Liquidator — CRITICAL: Redeploy Required
 
-- [x] Send liquidator `0x1e95cC20ad3917ee523c677faa7AB3467f885CFe` to Cork team for whitelist
-- [ ] **Confirm Cork whitelist** — verify `WhitelistManager.addToMarketWhitelist(poolId, 0x1e95...)` executed
-- [ ] **Acquire test assets:**
+The mainnet-deployed liquidator (`0x1e95cC20ad3917ee523c677faa7AB3467f885CFe`) has a **bug in the seizure order** — it seizes vbUSDC before cST, which causes `InvalidParams()` on every liquidation because zero cST is seized when the violator's debt is already cleared. The fixed version (in `cork-contracts/src/liquidator/CorkProtectedLoopLiquidator.sol`) seizes cST first, then vbUSDC, and caps the Cork exercise amount via `previewExercise`. Tested end-to-end on Tenderly fork — full liquidation cycle succeeds.
+
+- [ ] **Redeploy fixed `CorkProtectedLoopLiquidator` to mainnet** — run `07_DeployLiquidator.s.sol` with updated source
+- [ ] **Send NEW liquidator address to Cork team for whitelist** — old address is useless
+- [ ] **Confirm Cork whitelist on new address** — `WhitelistManager.addToMarketWhitelist(poolId, newAddress)`
+- [ ] **Also whitelist deployer EOA** `0x5304ebB378186b081B99dbb8B6D17d9005eA0448` for minting test cST
+
+### Liquidation Bot — Built, Needs Production Deploy
+
+Bot scripts at `cork-contracts/script/bot/`. Tested manually on Tenderly fork (successful liquidation: ~6000 sUSDe debt cleared, ~291 sUSDe profit). Uses `cast` (Foundry) and runs as a polling loop.
+
+- [x] Bot scripts created (`setup.sh`, `run.sh`, `.env.example`)
+- [x] Bot tested on Tenderly fork — full liquidation cycle confirmed
+- [ ] **Deploy bot to Digital Ocean** — install Foundry, configure `.env` with mainnet RPC + bot private key
+- [ ] **Fund bot wallet with ETH** for gas on mainnet
+- [ ] **Run `setup.sh`** on mainnet (enable controller, set operator, approve sUSDe)
+- [ ] **Start `run.sh`** as a systemd service or `nohup` background process
+
+### Post-Deployment Testing
+
+- [x] Borrow tested on Tenderly — hook enforces dual-collateral pairing (vbUSDC + cST)
+- [x] Liquidation tested on Tenderly — full cycle works with fixed contract
+- [x] Frontend deployed at cork.alphagrowth.fun (Tenderly fork demo)
+- [ ] **Acquire mainnet test assets:**
   - vbUSDC: approve USDC → deposit into Cork's vbUSDC vault (1:1)
   - sUSDe: buy via Ethena or DEX
-  - cST: `CorkPoolManager.mint()` — requires Cork whitelist on deployer EOA `0x5304ebB378186b081B99dbb8B6D17d9005eA0448`
-- [ ] **Verify on cork.alphagrowth.fun** — cluster appears, vaults load, deposit/borrow UI works
-- [ ] **Test borrow** — deposit vbUSDC + cST, borrow sUSDe, confirm hook enforces pairing
-- [ ] **Test liquidation** — create unhealthy position, confirm liquidator end-to-end
+  - cST: `CorkPoolManager.mint()` — requires Cork whitelist on deployer EOA
+- [ ] **Switch cork.alphagrowth.fun to mainnet** — update `.env` from Tenderly RPC to mainnet RPC, remove fork chain mapping if not needed
+- [ ] **Verify on cork.alphagrowth.fun** — cluster appears, vaults load, deposit/borrow UI works on real mainnet
+- [ ] **Test borrow on mainnet** — deposit vbUSDC + cST, borrow sUSDe
+- [ ] **Test liquidation on mainnet** — create unhealthy position, confirm end-to-end
 
 ### Blocked on Cork Team
 

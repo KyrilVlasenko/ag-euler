@@ -41,6 +41,23 @@ source .env && forge script script/06_ConfigureCluster.s.sol ...
 source .env && forge script script/07_DeployLiquidator.s.sol ...
 ```
 
+## Liquidation Bot
+
+Shell scripts using `cast` (Foundry). Run on any Linux box (Digital Ocean, etc).
+
+```bash
+cd cork-contracts/script/bot
+cp .env.example .env   # fill BOT_PRIVATE_KEY, RPC_URL
+./setup.sh             # one-time: enables EVC controller, sets operator, approves sUSDe
+./run.sh               # polling loop: discovers borrowers, checks health, liquidates
+```
+
+The bot sends an EVC batch per underwater position:
+1. `liquidator.liquidate(bot, sUsdeVault, violator, vbUSDCVault, maxUint, 0)` — seizes cST (free) + vbUSDC, exercises in Cork, sends sUSDe to bot
+2. `sUsdeVault.repay(maxUint, bot)` — repays pulled debt using sUSDe received
+
+Bot wallet needs ETH for gas. Does NOT need pre-funded sUSDe — proceeds arrive atomically within the batch.
+
 ## File Index
 
 | Contract | Path |
@@ -50,5 +67,11 @@ source .env && forge script script/07_DeployLiquidator.s.sol ...
 | ERC4626EVCCollateralCork | `cork-contracts/src/vault/ERC4626EVCCollateralCork.sol` |
 | ProtectedLoopHook | `cork-contracts/src/hook/ProtectedLoopHook.sol` |
 | CorkProtectedLoopLiquidator | `cork-contracts/src/liquidator/CorkProtectedLoopLiquidator.sol` |
+
+| Bot Script | Path |
+|---|---|
+| Environment template | `cork-contracts/script/bot/.env.example` |
+| One-time setup | `cork-contracts/script/bot/setup.sh` |
+| Polling loop | `cork-contracts/script/bot/run.sh` |
 
 Do not rewrite these. Read the existing files and `cork-contracts/cork-implementation.md` before touching anything.

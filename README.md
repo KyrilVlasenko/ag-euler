@@ -1,6 +1,6 @@
 # AG-Euler
 
-Alpha Growth's Euler deployment monorepo. Each subdirectory is a partner deployment — custom contracts, deployment scripts, and docs. One frontend ([ag-euler-lite](https://github.com/rootdraws/ag-euler-lite)), configured per partner via env vars in Vercel.
+Alpha Growth's Euler deployment monorepo. Each subdirectory is a partner deployment — custom contracts, deployment scripts, and docs. Shared frontend ([ag-euler-lite](https://github.com/rootdraws/ag-euler-lite)) configured per partner via env vars in Vercel, with per-partner forks when custom UX is needed.
 
 ```bash
 git clone --recurse-submodules https://github.com/rootdraws/ag-euler.git
@@ -10,10 +10,10 @@ git clone --recurse-submodules https://github.com/rootdraws/ag-euler.git
 
 ## Deployments
 
-| Partner | URL | Contracts | Status |
-|---|---|---|---|
-| Cork Protocol | [cork.alphagrowth.fun](https://cork.alphagrowth.fun) | [cork-contracts/](cork-contracts/) | Live |
-| Balancer | balancer.alphagrowth.fun | [balancer-contracts/](balancer-contracts/) | Contracts Deployed |
+| Partner | URL | Contracts | Frontend | Status |
+|---|---|---|---|---|
+| Cork Protocol | [cork.alphagrowth.fun](https://cork.alphagrowth.fun) | [cork-contracts/](cork-contracts/) | [ag-euler-lite-cork](https://github.com/rootdraws/ag-euler-lite-cork) | Live (Tenderly demo) |
+| Balancer | balancer.alphagrowth.fun | [balancer-contracts/](balancer-contracts/) | ag-euler-lite (shared) | Contracts Deployed |
 
 ---
 
@@ -23,10 +23,16 @@ git clone --recurse-submodules https://github.com/rootdraws/ag-euler.git
 AG-Euler/
 ├── cork-contracts/          ← Cork Protocol deployment
 │   ├── src/                 ← oracle, hook, liquidator, vault
-│   ├── script/              ← 7 deployment scripts
+│   ├── script/              ← 7 deployment scripts + bot/
+│   │   └── bot/             ← liquidation bot (setup.sh, run.sh, .env.example)
 │   ├── cork-README.md
 │   ├── cork-implementation.md
 │   └── cork-claude.md
+├── euler-lite-cork/         ← Cork frontend (separate repo → rootdraws/ag-euler-lite-cork)
+├── euler-lite/              ← shared frontend (independent repo → rootdraws/ag-euler-lite)
+├── balancer-contracts/      ← Balancer BPT vault deployment (Monad, chain 143)
+│   ├── script/              ← 6 deployment scripts
+│   └── balancer-claude.md
 ├── reference/               ← upstream read-only repos (submodules)
 │   ├── ethereum-vault-connector/
 │   ├── euler-interfaces/
@@ -34,10 +40,6 @@ AG-Euler/
 │   ├── euler-vault-kit/
 │   ├── euler-vault-scripts/
 │   └── phoenix/
-├── euler-lite/              ← frontend (independent repo → rootdraws/ag-euler-lite)
-├── balancer-contracts/      ← Balancer BPT vault deployment (Monad, chain 143)
-│   ├── script/              ← 6 deployment scripts
-│   └── balancer-claude.md
 ├── TODO.md                  ← consolidated task tracker (all partners)
 ├── claude.md                ← AG-wide frontend context
 └── README.md
@@ -47,26 +49,31 @@ AG-Euler/
 
 ## The Core Insight
 
-There is no forking. Everything lives in one place, and every partner deployment is just a different set of env vars.
+Everything lives in one place. Most partner deployments are just a different set of env vars on the shared frontend.
 
-**Three repos, total:**
+**Repos:**
 
 ```
 AG-Euler/  (this repo)                ← all development happens here
-rootdraws/ag-euler-lite               ← one frontend, Vercel watches it
+rootdraws/ag-euler-lite               ← shared frontend, Vercel watches it
+rootdraws/ag-euler-lite-cork          ← Cork-specific frontend (custom dual-collateral borrow flow)
 rootdraws/ag-euler-<partner>-labels   ← one per partner, fetched at runtime
 ```
 
-**N Vercel projects, one codebase:**
+**N Vercel projects:**
 
 ```
 rootdraws/ag-euler-lite
-  └── Vercel Project: cork.alphagrowth.fun     → Cork env vars
   └── Vercel Project: balancer.alphagrowth.fun → Balancer env vars
   └── Vercel Project: infinifi.alphagrowth.fun → InfiniFi env vars
+
+rootdraws/ag-euler-lite-cork
+  └── Vercel Project: cork.alphagrowth.fun     → Cork env vars
 ```
 
-Changing env vars in Vercel morphs the site completely. No partner ever gets their own frontend repo.
+**Default model:** Changing env vars in Vercel morphs the shared frontend completely — no per-partner repo needed.
+
+**Exception:** Cork required a separate frontend repo because its dual-collateral borrow flow (vbUSDC + cST deposited atomically via EVC batch) couldn't be feature-flagged into the standard borrow UI. If a partner needs deeply custom UX, fork `ag-euler-lite` into `ag-euler-lite-<partner>`.
 
 ---
 
@@ -86,7 +93,7 @@ Changing env vars in Vercel morphs the site completely. No partner ever gets the
 | `RPC_URL_HTTP_<chainId>` | Which chains are active |
 | `NUXT_PUBLIC_SUBGRAPH_URI_<chainId>` | Subgraph per chain |
 
-For custom UI: add feature-flagged Vue pages to `ag-euler-lite` toggled via `NUXT_PUBLIC_CONFIG_ENABLE_<FEATURE>`. Do NOT create per-partner frontend repos.
+For custom UI: first try feature-flagged Vue pages in `ag-euler-lite` toggled via `NUXT_PUBLIC_CONFIG_ENABLE_<FEATURE>`. If the customization is too deep (e.g. Cork's dual-collateral borrow), fork into `ag-euler-lite-<partner>` and point a separate Vercel project at it.
 
 Reference repos (`euler-vault-kit`, `ethereum-vault-connector`, `euler-interfaces`, `euler-labels`, `phoenix`) are submodules — pinned upstream sources. Labels repos (`rootdraws/ag-euler-<partner>-labels`) are standalone, managed independently.
 

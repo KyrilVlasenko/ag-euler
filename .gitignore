@@ -17,6 +17,11 @@ node_modules/
 .nuxt/
 dist/
 
+# --- Foundry Build Artifacts ---
+**/out/
+**/cache/
+**/broadcast/
+
 # --- IDE & Editor ---
 .vscode/
 .idea/
@@ -34,3 +39,9 @@ npm-debug.log*
 # --- Frontend Repos (each has its own .git) ---
 euler-lite/
 euler-lite-cork/
+
+# --- Reference Repos (standalone clones, not submodules) ---
+reference/
+
+# --- Labels Repos (standalone, managed independently) ---
+balancer-labels/

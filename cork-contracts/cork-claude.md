@@ -66,8 +66,8 @@ So `5e16 = 0.05% = 5 bps`. The formula `feeBps * 1e16 / 1e18 = feeBps / 100` con
 **8. ProtectedLoopHook is only attached to the borrow vault (sUSDe), not the collateral vaults.**
 The collateral vaults (`ERC4626EVCCollateral`) do not expose `setHookConfig`. The withdraw/deposit protections for collateral vaults are handled via `_withdraw`/`_deposit` overrides directly in `ERC4626EVCCollateralCork`, not via external hook. The hook (`OP_BORROW=64` on sUSDe vault) only gates the borrow operation. It checks: REF > 0, cST > 0, cST >= REF * 1e12 (1:1 pairing), cST not expired.
 
-**9. Liquidator debt repayment is the bot's responsibility, not the contract's.**
-`CorkProtectedLoopLiquidator._customLiquidation` seizes collateral, pulls debt to the operator via `pullDebt`, exercises in Cork, and sends all proceeds to `receiver`. The calling bot must repay the debt in the same EVC batch. This matches the `SBLiquidator` pattern. The contract enforces `collateral == refVault` via a require.
+**9. Liquidator seizure order is critical — cST MUST be seized before vbUSDC.**
+`CorkProtectedLoopLiquidator._customLiquidation` seizes cST first (free claim via EVK's worthless-collateral path while violator still has debt), then seizes vbUSDC (standard price-based liquidation, transfers debt). It then pulls debt to the operator via `pullDebt`, redeems vault shares, exercises in Cork (capping cST exercise amount via `previewExercise` if insufficient vbUSDC), and sends all proceeds to `receiver`. The calling bot must repay the debt in the same EVC batch. This matches the `SBLiquidator` pattern. The contract enforces `collateral == refVault` via a require. See the LIQUIDATOR section below for full details.
 
 **10. Three spec gaps remain — blocked on CorkSeriesRegistry (not yet built by Cork).**
 - H_pool does NOT auto-reduce near expiry. Mitigation: governor manually calls `CorkOracleImpl.setHPool(0)` before April 19, 2026.
@@ -147,3 +147,87 @@ git submodule update --init lib/forge-std lib/solady lib/openzeppelin-contracts 
 - `MarketId` is `type MarketId is bytes32` from `IPoolManager.sol`
 - `IPriceOracle` from `cork-contracts/lib/euler-price-oracle/src/interfaces/IPriceOracle.sol` -- standard `getQuote(inAmount, base, quote)` interface used by both Cork oracles
 - cST `expiry()` / `isExpired()` come from `IPoolShare` (`phoenix/contracts/interfaces/IPoolShare.sol`)
+
+---
+
+### LIQUIDATOR
+
+#### Corrected Liquidation Flow (critical — seizure order matters)
+
+The `CorkProtectedLoopLiquidator` was fixed to seize cST **before** vbUSDC. The original implementation seized vbUSDC first, which cleared the violator's debt and caused the subsequent cST liquidation to be a no-op (EVK's `calculateMaxLiquidation` returns early when `liability == 0`). This led to `InvalidParams()` reverts in Cork's `exercise()` because zero cST was seized.
+
+**Correct order inside `_customLiquidation`:**
+1. **A.1: Seize ALL cST for free** — `IEVault(liability).liquidate(violator, cstVault, type(uint256).max, 0)`. Because `CSTZeroOracle` returns 0, EVK's worthless-collateral path (Liquidation.sol L155-163) seizes ALL cST shares with zero debt repay. This only works while the violator still has non-zero liability.
+2. **A.2: Seize vbUSDC** — standard price-based EVK liquidation. Transfers debt from violator to the liquidator contract.
+3. **B: Pull debt** — `evc.call(liability, _msgSender(), 0, pullDebt(max, address(this)))` moves debt to the calling bot.
+4. **C: Redeem + exercise** — redeem vault shares for underlying tokens, then `exercise()` in Cork pool to receive sUSDe. Uses `previewExercise` to cap the cST amount if the seized vbUSDC is insufficient to cover the full exercise.
+5. **C: Transfer proceeds** — all sUSDe, leftover vbUSDC, and leftover cST sent to receiver.
+
+**cST exercise capping (Phase C):** The liquidator seizes ALL cST but only partial vbUSDC (proportional to liquidation discount). Cork's `exercise()` consumes both at the pool's `swapRate`. If we try to exercise more cST than our vbUSDC can cover, it reverts with `ERC20InsufficientAllowance`. The contract uses `previewExercise(poolId, cstAmount)` to calculate required vbUSDC and proportionally reduces `cstToExercise` if needed.
+
+**cST as recognized collateral:** Even though cST has 0/0 LTVs, `setLTV` was called during cluster configuration (script `06_ConfigureCluster.s.sol`). This sets `targetTimestamp` in EVK's `LTVConfig`, making cST pass `isRecognizedCollateral()` — required for liquidation to work on zero-valued collateral.
+
+#### Bot Scripts — `cork-contracts/script/bot/`
+
+Production-ready shell scripts using `cast` (Foundry). Designed to run on Digital Ocean or any Linux box.
+
+| File | Purpose |
+|---|---|
+| `.env.example` | All contract addresses, RPC URL, bot private key template |
+| `setup.sh` | **Run once.** Enables sUSDe vault as EVC controller for bot, sets liquidator as EVC operator, approves sUSDe for vault repayment. |
+| `run.sh` | **Main loop.** Discovers borrowers from `Borrow` events, polls `checkLiquidation` and `debtOf`, executes EVC batch on underwater positions. |
+
+#### Bot Setup (run once per bot wallet)
+
+```bash
+cd cork-contracts/script/bot
+cp .env.example .env
+# Fill in BOT_PRIVATE_KEY and RPC_URL
+./setup.sh
+```
+
+`setup.sh` executes three transactions from the bot wallet:
+1. `EVC.enableController(bot, sUsdeVault)` — required for `pullDebt` to work
+2. `EVC.setAccountOperator(bot, liquidator, true)` — authorizes the liquidator contract
+3. `sUSDe.approve(sUsdeVault, max)` — allows repayment in the same batch
+
+#### Bot Execution
+
+```bash
+./run.sh              # foreground
+nohup ./run.sh &      # background (Digital Ocean)
+```
+
+The bot:
+1. Scans `Borrow(address,uint256)` events on the sUSDe vault to discover all historical borrowers
+2. Every `POLL_INTERVAL` seconds (default 30), checks each borrower:
+   - `debtOf(borrower)` — skip if zero
+   - `checkLiquidation(liquidator, borrower, vbUSDCVault)` — returns `(maxRepay, maxYield)` or reverts if healthy
+3. When a position is liquidatable, sends an EVC batch:
+   - Item 1: `liquidator.liquidate(bot, sUsdeVault, violator, vbUSDCVault, maxUint, 0)`
+   - Item 2: `sUsdeVault.repay(maxUint, bot)`
+4. Logs all activity; optionally sends webhook notifications (Discord/Slack)
+
+#### EVC Batch Encoding (reference)
+
+```bash
+LIQ_CD=$(cast calldata "liquidate(address,address,address,address,uint256,uint256)" \
+    "$BOT" "$SUSDE_VAULT" "$VIOLATOR" "$VBUSDC_VAULT" "$MAX_UINT" "0")
+REP_CD=$(cast calldata "repay(uint256,address)" "$MAX_UINT" "$BOT")
+
+cast send --private-key "$KEY" --rpc-url "$RPC" "$EVC" \
+    "batch((address,address,uint256,bytes)[])" \
+    "[($LIQUIDATOR,$BOT,0,$LIQ_CD),($SUSDE_VAULT,$BOT,0,$REP_CD)]" \
+    --gas-limit 3000000
+```
+
+#### Profit Model
+
+The bot receives sUSDe from the Cork `exercise()` within the batch. After repaying the pulled debt, the excess sUSDe is profit (~5% of the liquidated amount at 15% max discount). Leftover cST (portion that couldn't be exercised due to vbUSDC shortage) and leftover vbUSDC also accumulate in the bot wallet.
+
+#### Prerequisites
+
+1. **Foundry installed** (`curl -L https://foundry.paradigm.xyz | bash && foundryup`)
+2. **Bot wallet funded with ETH** for gas
+3. **Liquidator contract whitelisted** on Cork pool by Cork governance
+4. **Bot wallet does NOT need pre-funded sUSDe** — the exercise proceeds arrive atomically within the same EVC batch before `repay` executes (checks are deferred)
