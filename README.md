@@ -13,7 +13,7 @@ git clone --recurse-submodules https://github.com/rootdraws/ag-euler.git
 | Partner | URL | Contracts | Frontend | Status |
 |---|---|---|---|---|
 | Cork Protocol | [cork.alphagrowth.fun](https://cork.alphagrowth.fun) | [cork-contracts/](cork-contracts/) | [ag-euler-lite-cork](https://github.com/rootdraws/ag-euler-lite-cork) | Live (Tenderly demo) |
-| Balancer | balancer.alphagrowth.fun | [balancer-contracts/](balancer-contracts/) | ag-euler-lite (shared) | Contracts Deployed |
+| Balancer | [balancer.alphagrowth.fun](https://balancer.alphagrowth.fun) | [balancer-contracts/](balancer-contracts/) | [ag-euler-lite-balancer](https://github.com/rootdraws/ag-euler-lite-balancer) | **Live** |
 
 ---
 
@@ -21,7 +21,7 @@ git clone --recurse-submodules https://github.com/rootdraws/ag-euler.git
 
 ```
 AG-Euler/
-├── cork-contracts/          ← Cork Protocol deployment
+├── cork-contracts/          ← Cork Protocol deployment (Ethereum mainnet)
 │   ├── src/                 ← oracle, hook, liquidator, vault
 │   ├── script/              ← 7 deployment scripts + bot/
 │   │   └── bot/             ← liquidation bot (setup.sh, run.sh, .env.example)
@@ -31,8 +31,10 @@ AG-Euler/
 ├── euler-lite-cork/         ← Cork frontend (separate repo → rootdraws/ag-euler-lite-cork)
 ├── euler-lite/              ← shared frontend (independent repo → rootdraws/ag-euler-lite)
 ├── balancer-contracts/      ← Balancer BPT vault deployment (Monad, chain 143)
-│   ├── script/              ← 6 deployment scripts
+│   ├── src/                 ← BalancerBptAdapter (single-sided LP + ERC4626 wrapping)
+│   ├── script/              ← 9 deployment scripts + test scripts
 │   └── balancer-claude.md
+├── euler-lite-balancer/     ← Balancer frontend (separate repo → rootdraws/ag-euler-lite-balancer)
 ├── reference/               ← upstream read-only repos (submodules)
 │   ├── ethereum-vault-connector/
 │   ├── euler-interfaces/
@@ -41,7 +43,7 @@ AG-Euler/
 │   ├── euler-vault-scripts/
 │   └── phoenix/
 ├── TODO.md                  ← consolidated task tracker (all partners)
-├── claude.md                ← AG-wide frontend context
+├── CLAUDE.md                ← AG-wide frontend context
 └── README.md
 ```
 
@@ -57,6 +59,7 @@ Everything lives in one place. Most partner deployments are just a different set
 AG-Euler/  (this repo)                ← all development happens here
 rootdraws/ag-euler-lite               ← shared frontend, Vercel watches it
 rootdraws/ag-euler-lite-cork          ← Cork-specific frontend (custom dual-collateral borrow flow)
+rootdraws/ag-euler-lite-balancer      ← Balancer-specific frontend (BPT zap, Enso/adapter multiply)
 rootdraws/ag-euler-<partner>-labels   ← one per partner, fetched at runtime
 ```
 
@@ -64,16 +67,18 @@ rootdraws/ag-euler-<partner>-labels   ← one per partner, fetched at runtime
 
 ```
 rootdraws/ag-euler-lite
-  └── Vercel Project: balancer.alphagrowth.fun → Balancer env vars
-  └── Vercel Project: infinifi.alphagrowth.fun → InfiniFi env vars
+  └── Vercel Project: infinifi.alphagrowth.fun → InfiniFi env vars (future)
 
 rootdraws/ag-euler-lite-cork
   └── Vercel Project: cork.alphagrowth.fun     → Cork env vars
+
+rootdraws/ag-euler-lite-balancer
+  └── Vercel Project: balancer.alphagrowth.fun → Balancer env vars
 ```
 
 **Default model:** Changing env vars in Vercel morphs the shared frontend completely — no per-partner repo needed.
 
-**Exception:** Cork required a separate frontend repo because its dual-collateral borrow flow (vbUSDC + cST deposited atomically via EVC batch) couldn't be feature-flagged into the standard borrow UI. If a partner needs deeply custom UX, fork `ag-euler-lite` into `ag-euler-lite-<partner>`.
+**When to fork:** Cork and Balancer both required separate frontend repos. Cork's dual-collateral borrow flow (vbUSDC + cST) couldn't be feature-flagged. Balancer's BPT zap page, Enso routing integration, and adapter-based multiply are too specialized for the shared codebase. If a partner needs custom swap routing, non-standard collateral flows, or dedicated pages, fork `ag-euler-lite` into `ag-euler-lite-<partner>`.
 
 ---
 
@@ -93,7 +98,7 @@ rootdraws/ag-euler-lite-cork
 | `RPC_URL_HTTP_<chainId>` | Which chains are active |
 | `NUXT_PUBLIC_SUBGRAPH_URI_<chainId>` | Subgraph per chain |
 
-For custom UI: first try feature-flagged Vue pages in `ag-euler-lite` toggled via `NUXT_PUBLIC_CONFIG_ENABLE_<FEATURE>`. If the customization is too deep (e.g. Cork's dual-collateral borrow), fork into `ag-euler-lite-<partner>` and point a separate Vercel project at it.
+For custom UI: first try feature-flagged Vue pages in `ag-euler-lite` toggled via `NUXT_PUBLIC_CONFIG_ENABLE_<FEATURE>`. If the customization is too deep (e.g. Cork's dual-collateral borrow, Balancer's Enso/adapter routing), fork into `ag-euler-lite-<partner>` and point a separate Vercel project at it.
 
 Reference repos (`euler-vault-kit`, `ethereum-vault-connector`, `euler-interfaces`, `euler-labels`, `phoenix`) are submodules — pinned upstream sources. Labels repos (`rootdraws/ag-euler-<partner>-labels`) are standalone, managed independently.
 

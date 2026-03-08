@@ -2,7 +2,10 @@
 
 AI context file for the **shared** `euler-lite/` frontend. For project overview see `README.md`. For task tracking see `TODO.md`. For contract context see `<partner>-contracts/<partner>-claude.md`.
 
-**Cork has its own frontend:** `euler-lite-cork/` (repo: `rootdraws/ag-euler-lite-cork`). See `euler-lite-cork/euler-lite-claude.md` for Cork-specific context. Everything below applies to the shared frontend used by all other partners.
+**Cork has its own frontend:** `euler-lite-cork/` (repo: `rootdraws/ag-euler-lite-cork`). See `euler-lite-cork/euler-lite-claude.md` for Cork-specific context.
+**Balancer has its own frontend:** `euler-lite-balancer/` (repo: `rootdraws/ag-euler-lite-balancer`). See `euler-lite-balancer/euler-lite-balancer-claude.md` for Balancer-specific context.
+
+Everything below applies to the shared frontend used by all other partners.
 
 ---
 
@@ -169,23 +172,24 @@ The multiply feature creates leveraged positions in a single atomic transaction.
 
 The standard flow: borrow → send to Swapper → Swapper.multicall (executes DEX route) → SwapVerifier.verify → output deposited as collateral. All inside one EVC `batch()` call.
 
-### Balancer BPT Multiply via Enso
+### Balancer BPT Multiply (Implemented)
 
-For Balancer BPT vaults on Monad, the "swap" step is not a DEX trade — it's a Balancer V3 `addLiquidityUnbalanced` call (wMON → BPT). This is handled via **Enso's Bundle API** (`https://api.enso.build`), which composes flashloan + Balancer zap + Euler deposit/borrow into a single atomic transaction.
+**Balancer has its own frontend:** `euler-lite-balancer/` (repo: `rootdraws/ag-euler-lite-balancer`). See `euler-lite-balancer/euler-lite-balancer-claude.md` for the full implementation. Summary below.
 
-**Enso** (docs: https://docs.enso.build, index: https://docs.enso.build/llms.txt) is a DeFi action bundling API. Key endpoints:
-- `GET /api/v1/shortcuts/route` — optimal route between two tokens (swap)
-- `POST /api/v1/shortcuts/bundle` — compose multiple DeFi actions atomically (deposit, borrow, flashloan, route)
-- `GET /api/v1/protocols?chainId=X` — list supported protocols on a chain
+For Balancer BPT vaults on Monad, the "swap" step is not a DEX trade — it's a Balancer V3 `addLiquidityUnbalanced` call. The architecture is **EVC Batch + custom routing** (Architecture B):
 
-Enso supports Morpho flashloans on Monad (0% fee). Full implementation spec in `balancer-contracts/zap.md`.
+- **Pools 1, 4** (ERC4626-wrapped tokens): Custom `BalancerBptAdapter` handles wrapping + single-sided deposit. Invoked via Euler Swapper's `GenericHandler` within the EVC batch.
+- **Pools 2, 3** (native tokens): Enso Finance `/route` API routes borrow asset → BPT. Called within the same EVC batch via `GenericHandler`.
+- **Repay** (all pools): Enso `/route` handles BPT → borrow asset.
 
-**Key decision:** Whether Enso supports Euler V2 as a protocol on Monad determines the architecture:
-- **Architecture A (Enso Bundle):** Enso orchestrates everything — no custom smart contracts needed
-- **Architecture B (EVC Batch + Enso Route):** EVC batch for Euler ops, Enso `/route` for the BPT zap only
-- **Architecture C (Custom Handler):** Fallback — build `BalancerBptHandler.sol` for Euler's Swapper framework
+**Enso** (docs: https://docs.enso.build) is used only for its Route API — not the Bundle API. Enso does not support Euler V2 on Monad. Key endpoint: `GET /api/v1/shortcuts/route`.
 
-See `balancer-contracts/zap.md` for full spec and `TODO.md` for task tracking.
+Key implementation details:
+- Swapper multicall uses `swap` + `sweep` (not `deposit`). `deposit()` consumes tokens, breaking `verifyAmountMinAndSkim`.
+- Debt calculation includes a safety margin (`max(3× slippage, 1%)`) to prevent `EVC_ControllerViolation` from swap price impact.
+- Adapter BPT preview uses `ERC4626.previewDeposit` + decimal scaling (not `queryAddLiquidityUnbalanced`, which reverts on Monad).
+
+See `balancer-contracts/balancer-claude.md` for contract details and `euler-lite-balancer/euler-lite-balancer-claude.md` for frontend architecture.
 
 ---
 

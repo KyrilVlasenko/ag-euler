@@ -10,7 +10,9 @@ Deployment completed on Monad (chain 143). This file covers deployed contracts, 
 
 | Contract | Address |
 |---|---|
-| KinkIRM | `0x2CB88c8E5558380077056ECb9DDbe1e00fdbC402` |
+| KinkIRM (original, unused) | `0x2CB88c8E5558380077056ECb9DDbe1e00fdbC402` |
+| AUSD KinkIRM (3.5% at 93% kink) | `0x2B23EC0C6851cC14162546a6860a865f1fc4aE58` |
+| WMON KinkIRM (9% at 93% kink) | `0x36aF0910227ce45601511F8F15CCE9BBb0838473` |
 | EulerRouter | `0x77C3b512d1d9E1f22EeCde73F645Da14f49CeC73` |
 | AUSD Borrow Vault | `0x438cedcE647491B1d93a73d491eC19A50194c222` |
 | WMON Borrow Vault | `0x75B6C392f778B8BCf9bdB676f8F128b4dD49aC19` |
@@ -192,6 +194,7 @@ Requires prior ERC20 approve: to Enso Router for pools 1-3, to the adapter addre
 | `07_EnableOperations.s.sol` | `setHookConfig(address(0), 0)` on each vault |
 | `08_DeployBptAdapter.s.sol` | Pool 4 BPT adapter deployment |
 | `09_DeployBptAdapterPool1.s.sol` | Pool 1 BPT adapter deployment |
+| `10_UpdateIRM.s.sol` | Deploy split IRMs (AUSD 3.5%, WMON 9%) and update borrow vaults |
 | `TestLoopZap.s.sol` | Fork test for the single-batch EVC flow (used to diagnose `transferFromSender` missing) |
 | `TestAdapter.s.sol` | Adapter integration test |
 | `TestAdapterZapOut.s.sol` / `TestAdapterZapOut2.s.sol` | ZapOut test scripts (discovered hook rejection) |

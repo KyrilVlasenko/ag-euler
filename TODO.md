@@ -95,7 +95,11 @@ Require `CorkSeriesRegistry` which Cork has not deployed.
 
 ## Balancer — Monad (Chain 143)
 
-Contracts deployed. 6/6 scripts broadcast successfully. All vaults, oracles, and cluster config are live on-chain. Frontend integration has not started.
+**Status: LIVE.** Contracts deployed, frontend live at [balancer.alphagrowth.fun](https://balancer.alphagrowth.fun). Lending, borrowing, multiply (Pools 1, 2, 4), Zap BPT, and repay all functional.
+
+**Frontend repo:** `rootdraws/ag-euler-lite-balancer` (fork of euler-lite, customized for Balancer BPT markets)
+**Labels repo:** `rootdraws/ag-euler-balancer-labels`
+**Vercel project:** `ag-euler-balancer`
 
 ### Deployed Addresses
 
@@ -109,118 +113,38 @@ Contracts deployed. 6/6 scripts broadcast successfully. All vaults, oracles, and
 | Pool2 Vault (sMON/wnWMON) | `0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5` |
 | Pool3 Vault (shMON/wnWMON) | `0x6660195421557BC6803e875466F99A764ae49Ed7` |
 | Pool4 Vault (wnLOAZND/AZND/wnAUSD) | `0x175831aF06c30F2EA5EA1e3F5EBA207735Eb9F92` |
+| Pool 1 BPT Adapter | `0xC904aAB60824FC8225F6c8843897fFba14c8Bf98` |
+| Pool 4 BPT Adapter | `0x8753eCb44370fcd4068Dd5BA1BE5bdd85122c832` |
 
-### Contract TODOs
+### What's Working
+
+- [x] Contracts deployed (9 scripts: IRM, router, borrow vaults, collateral vaults, oracles, cluster config, operations, 2 adapters)
+- [x] Labels repo created and configured
+- [x] Frontend deployed on Vercel (`ag-euler-balancer`)
+- [x] Lending (deposit into borrow vaults)
+- [x] Borrowing (borrow against BPT collateral)
+- [x] Multiply — Pool 1 (adapter) and Pool 4 (adapter) — working
+- [x] Multiply — Pool 2 (Enso) — working (with safety margin for swap slippage)
+- [x] Zap BPT — all 4 pools (Enso for 1-3, adapter for Pool 4)
+- [x] Repay — all pools via Enso
+- [x] Oracle pricing verified on-chain
+
+### Architecture Decisions (Resolved)
+
+| Decision | Outcome |
+|---|---|
+| Enso Bundle vs EVC Batch | **EVC Batch + Enso Route** (Architecture B). Enso does not support Euler V2 on Monad. |
+| Forward routing (borrow→BPT) | Adapter for Pools 1,4 (ERC4626 wrapped tokens). Enso Route for Pools 2,3. |
+| Reverse routing (BPT→borrow) | Enso for all pools. Adapter `zapOut` blocked by pool hooks. |
+| Swapper multicall strategy | `swap` + `sweep` (not `deposit`). `deposit()` consumes tokens, breaking `verifyAmountMinAndSkim`. |
+| BPT preview method | `ERC4626.previewDeposit` + decimal scaling. `queryAddLiquidityUnbalanced` reverts with `NotStaticCall()` on Monad. |
+| Debt safety margin | `max(3× slippage, 1%)` reduction on borrow amount to account for swap price impact. |
+
+### Remaining TODOs
 
 - [ ] **`setFeeReceiver(agAddress)`** on both borrow vaults — once AG has a Monad fee address. Currently revenue goes nowhere.
 - [ ] **`setCaps()`** — tighten supply/borrow caps on both borrow vaults. Currently unlimited (0,0). Set sensible limits before any real capital flows.
-
-### Labels Repo — `rootdraws/ag-euler-balancer-labels`
-
-The critical path item. Without this, the frontend shows zero vaults.
-
-- [ ] **Create GitHub repo** `rootdraws/ag-euler-balancer-labels`
-- [ ] **`143/products.json`** — two products with deployed vault addresses:
-  ```json
-  {
-    "ausd-bpt-leverage": {
-      "name": "Stablecoin BPT Leverage",
-      "description": "Borrow AUSD against Balancer stablecoin BPT collateral on Monad",
-      "entity": ["alphagrowth", "balancer", "euler"],
-      "url": "https://balancer.fi",
-      "vaults": [
-        "0x438cedcE647491B1d93a73d491eC19A50194c222",
-        "0x5795130BFb9232C7500C6E57A96Fdd18bFA60436",
-        "0x175831aF06c30F2EA5EA1e3F5EBA207735Eb9F92"
-      ]
-    },
-    "wmon-bpt-leverage": {
-      "name": "MON LST BPT Leverage",
-      "description": "Borrow WMON against Balancer LST BPT collateral on Monad",
-      "entity": ["alphagrowth", "balancer", "euler"],
-      "url": "https://balancer.fi",
-      "vaults": [
-        "0x75B6C392f778B8BCf9bdB676f8F128b4dD49aC19",
-        "0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5",
-        "0x6660195421557BC6803e875466F99A764ae49Ed7"
-      ]
-    }
-  }
-  ```
-- [ ] **`143/vaults.json`** — display names for each vault
-- [ ] **`143/entities.json`** — entries for `alphagrowth`, `balancer`, `euler`
-- [ ] **`143/points.json`** — `[]`
-- [ ] **`143/opportunities.json`** — `{}`
-- [ ] **`logo/alphagrowth.svg`** — already exists in `public/entities/`, copy over
-- [ ] **`logo/balancer.svg`** — source from Balancer brand assets
-- [ ] **`logo/euler.svg`** — source from Euler brand assets
-
-### Multiply Position — Enso Bundle Integration
-
-The core product feature: one-click leveraged BPT positions. Uses Enso's Bundle API to compose flashloan + Balancer V3 zap + Euler deposit/borrow into a single atomic transaction. Full spec in `balancer-contracts/zap.md`.
-
-**Phase 1: Validate Enso on Monad (FIRST — gates everything below)**
-
-- [ ] **Check Enso protocol support:** `GET https://api.enso.build/api/v1/protocols?chainId=143` — look for `euler-v2` and `balancer-v3`
-- [ ] **Test Enso route wMON → BPT:** `GET /api/v1/shortcuts/route?chainId=143&tokenIn=WMON&tokenOut=BPT&amountIn=1e18` — confirms Balancer V3 zap works
-- [ ] **Test Enso bundle with Euler V2:** `POST /api/v1/shortcuts/bundle` with `protocol: "euler-v2"` deposit + borrow — confirms Euler V2 is supported
-- [ ] **Decision gate:** Enso supports both → Architecture A. Balancer only → Architecture B (hybrid). Neither → Architecture C (custom handler). See `zap.md` for full decision tree.
-
-**Phase 2: Build Integration (after Phase 1 decision)**
-
-- [ ] **Get Enso API key** at [enso.finance/developers](https://enso.finance/developers) for production use
-- [ ] **Create `server/api/enso/bundle.post.ts`** — Nitro server proxy to Enso Bundle API (keeps API key server-side)
-- [ ] **Create `server/api/enso/route.get.ts`** — Nitro server proxy to Enso Route API
-- [ ] **Create `composables/useEnsoBundle.ts`** — Enso API client composable
-- [ ] **Adapt `useMultiplyForm.ts`** — support Enso bundle path for BPT vault pairs
-- [ ] **Add Enso tx execution path** in `useEulerOperations/execution.ts` (single tx format vs multi-step TxPlan)
-- [ ] **Test multiply flow end-to-end** — deposit wMON, multiply to BPT, verify position
-
-**Phase 3: Unwind (reduce/close position)**
-
-- [ ] **Test reduce multiply** — partial BPT → wMON conversion via Enso route (Balancer `removeLiquiditySingleTokenExactIn`)
-- [ ] **Test full close** — withdraw all BPT collateral, repay all wMON debt
-- [ ] **Verify liquidation path** — confirm liquidation works for BPT-collateralized positions
-
-### Frontend Patch
-
-Upstream `EulerChains.json` already includes chain 143 (Monad). Verify whether the address injection in `useEulerAddresses.ts` is still needed, or if setting `RPC_URL_HTTP_143` is sufficient.
-
-- [ ] **Test with just `RPC_URL_HTTP_143` set** — if Monad vaults load, no code change needed
-- [ ] **If not:** inject Monad addresses into `useEulerAddresses.ts` (fallback patch from `balancer-TODO.md` TODO 3)
-- [ ] **Add `balancer.svg`** to `euler-lite/public/entities/`
-- [ ] **Add Monad token icons** to `euler-lite/assets/tokens/` if needed (WMON, AUSD, BPT tokens)
-
-### Vercel Deployment — `balancer.alphagrowth.fun`
-
-- [ ] **Create new Vercel project** → source: `rootdraws/ag-euler-lite`
-- [ ] **Set custom domain** `balancer.alphagrowth.fun`
-- [ ] **Configure env vars:**
-  ```
-  NUXT_PUBLIC_APP_URL=https://balancer.alphagrowth.fun
-  RPC_URL_HTTP_143=<monad-rpc-url>
-  NUXT_PUBLIC_SUBGRAPH_URI_143=<goldsky-monad-subgraph-url>
-  NUXT_PUBLIC_CONFIG_LABELS_REPO=rootdraws/ag-euler-balancer-labels
-  NUXT_PUBLIC_CONFIG_LABELS_REPO_BRANCH=main
-  NUXT_PUBLIC_CONFIG_APP_TITLE="Alpha Growth × Balancer — BPT Leverage"
-  NUXT_PUBLIC_CONFIG_APP_DESCRIPTION="BPT leverage on Monad, curated by Alpha Growth."
-  NUXT_PUBLIC_CONFIG_ENABLE_EARN_PAGE=false
-  NUXT_PUBLIC_CONFIG_ENABLE_EXPLORE_PAGE=false
-  NUXT_PUBLIC_CONFIG_ENABLE_LEND_PAGE=true
-  NUXT_PUBLIC_CONFIG_ENABLE_ENTITY_BRANDING=true
-  NUXT_PUBLIC_CONFIG_ENABLE_VAULT_TYPE=true
-  APPKIT_PROJECT_ID=6a6da30f10e95d57f86c538e2edc4ea6
-  NUXT_PUBLIC_EULER_API_URL=https://indexer.euler.finance
-  NUXT_PUBLIC_SWAP_API_URL=https://swap-dev.euler.finance
-  NUXT_PUBLIC_PRICE_API_URL=https://indexer.euler.finance
-  NUXT_PUBLIC_PYTH_HERMES_URL=https://hermes.pyth.network
-  ```
-- [ ] **Verify deployment** — vaults appear, branding correct, wallet connect works
-
-### Smoke Test
-
-- [ ] **Deposit BPT into a collateral vault** via the UI
-- [ ] **Borrow AUSD or WMON** against BPT collateral
-- [ ] **Verify oracle pricing** — vault shows correct BPT valuation
-- [ ] **Verify liquidation path** — create undercollateralized position, confirm liquidation works
+- [ ] **Pool 3 multiply** — untested. Should work via Enso (same path as Pool 2) but needs verification.
+- [ ] **Liquidation testing** — confirm liquidation works end-to-end for BPT-collateralized positions.
+- [ ] **Governor transfer** — transfer from deployer EOA to multisig after stable.
 
