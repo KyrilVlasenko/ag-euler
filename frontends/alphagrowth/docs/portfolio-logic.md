@@ -13,6 +13,8 @@ Every on-chain deposit a user holds falls into one of three categories:
 
 Savings positions are stored in a single `depositPositions` array. The UI splits them into "Managed lending" (earn vaults) and "Direct lending" (EVK/securitize vaults) using `isEarnVault()` from the vault registry.
 
+Portfolio cards can display operational **portfolio notices** from the labels system (e.g. migration announcements, temporary pauses). Notices are resolved via `getVaultNotice()` which checks earn vault notices, vault overrides, and product-level `portfolioNotice` in priority order. On borrow cards, collateral and borrow notices are shown separately with deduplication when both vaults share the same product-level notice.
+
 ### How Categorization Works
 
 Categorization depends on a strict loading order: **borrows first, then savings**.
@@ -311,11 +313,16 @@ This is a `staticCall` - no transaction is sent, no gas is spent, and the state 
 
 ### Where Pyth Simulation Is Used
 
-**Vault fetching** (`entities/vault/fetcher.ts: fetchVault`):
+**Bulk vault fetching** (`entities/vault/fetcher.ts: fetchVaults`):
+1. Batch-fetch vaults via `batchLensCalls()` (fast path).
+2. Collect all Pyth-enabled vaults via `collectPythFeedIds()`.
+3. Batch re-fetch all Pyth vaults in a single `batchSimulation` via `executeBatchLensWithPythSimulation()`.
+4. Replace vault data with simulation results (contains fresh prices in `liabilityPriceInfo` and `collateralPrices[]`).
+
+**Single vault fetching** (`entities/vault/fetcher.ts: fetchVault`):
 1. Call `vaultLens.getVaultInfoFull()` normally (fast path).
-2. Check `collectPythFeedIds(vault.oracleDetailedInfo)`.
-3. If Pyth detected: re-query with `fetchVaultWithPythSimulation()`.
-4. Replace vault data with simulation result (contains fresh prices in `liabilityPriceInfo` and `collateralPrices[]`).
+2. If Pyth detected: re-query with `fetchVaultWithPythSimulation()` → `executeLensWithPythSimulation()`.
+3. Replace vault data with simulation result.
 
 **Borrow position loading** (`composables/useEulerAccount.ts: updateBorrowPositions`):
 1. Pre-fetch the borrow vault to check for Pyth oracles.
@@ -370,6 +377,20 @@ When submitting transactions that interact with Pyth-priced vaults, Pyth update 
           Portfolio Totals
           (totalSupplied, totalBorrowed)
 ```
+
+## Performance Optimizations
+
+### Batch Pyth Vault Refresh
+
+When loading borrow positions with Pyth-priced vaults, the system batch-fetches all Pyth vaults in a single `executeBatchLensWithPythSimulation()` call using `getVaultInfoFull` instead of calling `fetchVault()` individually for each. This eliminates ~15 sequential HTTP requests during portfolio load. The implementation collects all Pyth-enabled borrow vaults, deduplicates their feeds, and executes one batch simulation.
+
+### Concurrent Wallet Balance Fetching
+
+Token balance fetching in `useWallets.ts` uses `Promise.all()` for concurrent requests instead of a sequential `for...await` loop. This allows viem's HTTP transport to batch multiple `readContract` calls into fewer RPC requests, eliminating ~25 sequential HTTP requests and significantly reducing load time.
+
+### Polling Order
+
+The poll interval awaits `updateBalances()` before `refreshVaults()` to ensure wallet balances are fresh when vault data triggers position recalculation.
 
 ## Related Documentation
 

@@ -12,7 +12,9 @@ type SwapRouteItem = {
   }
 }
 
-withDefaults(defineProps<{
+const VISIBLE_COUNT = 3
+
+const props = withDefaults(defineProps<{
   title?: string
   statusLabel?: string | null
   items: SwapRouteItem[]
@@ -32,40 +34,47 @@ const emit = defineEmits<{
   (e: 'refresh'): void
 }>()
 
+const expanded = ref(false)
+
+const hasMore = computed(() => props.items.length > VISIBLE_COUNT)
+const visibleItems = computed(() =>
+  expanded.value ? props.items : props.items.slice(0, VISIBLE_COUNT),
+)
+
 const onSelect = (provider: string) => {
   emit('select', provider)
 }
 </script>
 
 <template>
-  <div class="bg-surface-secondary p-16 rounded-16 flex flex-col gap-12 border border-line-default">
-    <div class="flex justify-between items-center">
-      <p class="text-p2 text-content-primary">
-        {{ title }}
+  <div class="flex justify-between items-center">
+    <p class="text-h4 text-content-primary">
+      {{ title }}
+    </p>
+    <div class="flex items-center gap-8">
+      <p class="text-p3 text-content-secondary">
+        {{ statusLabel || '-' }}
       </p>
-      <div class="flex items-center gap-8">
-        <p class="text-p3 text-content-secondary">
-          {{ statusLabel || '-' }}
-        </p>
-        <button
-          type="button"
-          aria-label="Refresh swap quotes"
-          class="text-content-secondary hover:text-accent-600 transition-colors disabled:opacity-50"
-          :disabled="isLoading || !items.length"
-          @click="emit('refresh')"
-        >
-          <SvgIcon
-            name="refresh"
-            class="!w-16 !h-16"
-            :class="{ 'animate-spin': isLoading }"
-          />
-        </button>
-      </div>
+      <button
+        type="button"
+        aria-label="Refresh swap quotes"
+        class="text-content-secondary hover:text-accent-600 transition-colors disabled:opacity-50"
+        :disabled="isLoading || !items.length"
+        @click="emit('refresh')"
+      >
+        <SvgIcon
+          name="refresh"
+          class="!w-16 !h-16"
+          :class="{ 'animate-spin': isLoading }"
+        />
+      </button>
     </div>
-    <div class="flex flex-col gap-8 max-h-[240px] overflow-y-auto pr-4">
+  </div>
+  <div class="bg-surface-secondary p-16 rounded-16 flex flex-col gap-12 border border-line-default">
+    <div class="flex flex-col gap-8">
       <template v-if="items.length">
         <button
-          v-for="item in items"
+          v-for="item in visibleItems"
           :key="item.provider"
           type="button"
           class="w-full text-left rounded-12 border p-12 transition-colors"
@@ -88,6 +97,19 @@ const onSelect = (provider: string) => {
               <span class="truncate">{{ item.routeLabel || '-' }}</span>
             </div>
           </div>
+        </button>
+        <button
+          v-if="hasMore"
+          type="button"
+          class="flex items-center justify-center gap-4 text-p3 text-content-secondary hover:text-content-primary transition-colors py-4"
+          @click="expanded = !expanded"
+        >
+          <span>{{ expanded ? 'Show less' : `Show all ${items.length} quotes` }}</span>
+          <SvgIcon
+            name="arrow-down"
+            class="!w-14 !h-14 transition-transform"
+            :class="{ 'rotate-180': expanded }"
+          />
         </button>
       </template>
       <template v-else-if="isLoading">

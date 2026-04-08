@@ -1,13 +1,34 @@
 <script setup lang="ts">
+import { inject } from 'vue'
 import { useAccount } from '@wagmi/vue'
 import { useAppKit } from '@reown/appkit/vue'
 import { flip, offset, shift, useFloating } from '@floating-ui/vue'
+
+import { isOperationBlocked, operationBlockReason } from '~/utils/operationGuardRegistry'
+import { useModal } from '~/components/ui/composables/useModal'
+import { AcknowledgeTermsModal } from '#components'
+import type { KeyringFlowState, CredentialData } from '~/composables/useKeyring'
+import type { TosGuardState } from '~/composables/guards/useTosGuard'
+
+interface KeyringGuardState {
+  needsVerification: boolean
+  isExpired: boolean
+  flowState: KeyringFlowState
+  credentialData: CredentialData | null
+  launchExtension: () => Promise<void>
+  checkStatus: () => Promise<void>
+  cancelVerification: () => void
+}
 
 const props = defineProps<{ disabled?: boolean, loading?: boolean, disabledReason?: string }>()
 const { isConnected } = useAccount()
 const { open } = useAppKit()
 const { chainId: _chainId } = useEulerAddresses()
 const { chainId, switchChain } = useWagmi()
+const modal = useModal()
+
+const keyringGuard = inject<KeyringGuardState | null>('keyring-guard', null)
+const tosGuard = inject<TosGuardState | null>('tos-guard', null)
 
 const reference = ref(null)
 const floating = ref(null)
@@ -22,8 +43,12 @@ const { floatingStyles, update } = useFloating(reference, floating, {
   ],
 })
 
+const effectiveDisabledReason = computed(() =>
+  props.disabledReason || operationBlockReason.value,
+)
+
 const showTooltip = () => {
-  if (_disabled.value && props.disabledReason) {
+  if (_disabled.value && effectiveDisabledReason.value) {
     isTooltipVisible.value = true
     update()
   }
@@ -36,6 +61,7 @@ const needToSwitchChain = computed(() => {
   return isConnected.value && chainId.value !== _chainId.value
 })
 const _disabled = computed(() => {
+  if (isOperationBlocked.value) return true
   return props.disabled && !needToSwitchChain.value
 })
 const onClick = (e: Event) => {
@@ -50,6 +76,28 @@ const onClick = (e: Event) => {
     return
   }
 }
+
+const showKeyringFlow = computed(() =>
+  keyringGuard?.needsVerification === true,
+)
+
+const showTosFlow = computed(() =>
+  !showKeyringFlow.value && tosGuard?.isTermsRequired === true && !tosGuard?.tosLoadFailed,
+)
+
+const openTermsModal = () => {
+  modal.open(AcknowledgeTermsModal, {
+    props: {
+      onReject: () => {
+        modal.close()
+      },
+      onAccept: () => {
+        tosGuard?.acceptTerms()
+        modal.close()
+      },
+    },
+  })
+}
 </script>
 
 <template>
@@ -59,33 +107,61 @@ const onClick = (e: Event) => {
     @mouseenter="showTooltip"
     @mouseleave="hideTooltip"
   >
-    <UiButton
-      v-bind="$attrs"
-      size="large"
-      type="submit"
-      :variant="needToSwitchChain ? 'red' : 'primary'"
-      :loading="loading"
-      :disabled="_disabled"
-      @click="onClick"
-    >
-      <template v-if="needToSwitchChain">
-        Switch chain
-      </template>
-      <slot v-else-if="isConnected" />
-      <template v-else>
-        Connect wallet
-      </template>
-    </UiButton>
-    <Transition name="tooltip">
-      <div
-        v-if="isTooltipVisible && _disabled && disabledReason"
-        ref="floating"
-        :style="floatingStyles"
-        class="vault-form-submit__tooltip"
-      >
-        {{ disabledReason }}
+    <!-- Keyring verification flow replaces the button when verification is needed -->
+    <template v-if="showKeyringFlow && keyringGuard">
+      <div class="flex flex-col gap-12">
+        <KeyringAlert :is-expired="keyringGuard.isExpired" />
+        <KeyringVerificationFlow
+          :flow-state="keyringGuard.flowState"
+          :credential-cost="keyringGuard.credentialData?.cost"
+          @launch="keyringGuard.launchExtension()"
+          @check="keyringGuard.checkStatus()"
+          @cancel="keyringGuard.cancelVerification()"
+        />
       </div>
-    </Transition>
+    </template>
+
+    <!-- TOS acceptance flow -->
+    <template v-else-if="showTosFlow">
+      <UiButton
+        size="large"
+        variant="primary"
+        @click="openTermsModal"
+      >
+        Accept Terms Of Use
+      </UiButton>
+    </template>
+
+    <!-- Normal submit button -->
+    <template v-else>
+      <UiButton
+        v-bind="$attrs"
+        size="large"
+        type="submit"
+        :variant="needToSwitchChain ? 'red' : 'primary'"
+        :loading="loading"
+        :disabled="_disabled"
+        @click="onClick"
+      >
+        <template v-if="needToSwitchChain">
+          Switch chain
+        </template>
+        <slot v-else-if="isConnected" />
+        <template v-else>
+          Connect wallet
+        </template>
+      </UiButton>
+      <Transition name="tooltip">
+        <div
+          v-if="isTooltipVisible && _disabled && effectiveDisabledReason"
+          ref="floating"
+          :style="floatingStyles"
+          class="vault-form-submit__tooltip"
+        >
+          {{ effectiveDisabledReason }}
+        </div>
+      </Transition>
+    </template>
   </div>
 </template>
 

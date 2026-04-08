@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { getAddress, maxUint256, type Address } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
-import { getPublicClient } from '~/utils/public-client'
 import type { SecuritizeVault, Vault, VaultCollateralLTV } from '~/entities/vault'
 import { useEulerEntitiesOfVault } from '~/composables/useEulerLabels'
 import { getProductKeyByVault } from '~/utils/eulerLabelsUtils'
@@ -10,6 +9,7 @@ import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { isVaultBlockedByCountry } from '~/composables/useGeoBlock'
 import { autoLink } from '~/utils/autoLink'
 import { getExplorerLink } from '~/utils/block-explorer'
+import { getSpecialAddressLabel } from '~/utils/special-addresses'
 import { formatAssetValue } from '~/services/pricing/priceProvider'
 import { formatNumber, compactNumber, formatUsdValue, formatCompactUsdValue } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
@@ -19,7 +19,7 @@ import { VaultSupplyApyModal } from '#components'
 const { vault } = defineProps<{ vault: SecuritizeVault, desktopOverview?: boolean }>()
 const { enableEntityBranding: enableEntityBrandingDisplay, enableVaultType: enableVaultTypeDisplay } = useDeployConfig()
 
-const { EVM_PROVIDER_URL } = useEulerConfig()
+const { client: rpcClient } = useRpcClient()
 const { chainId } = useEulerAddresses()
 const { borrowList: _borrowList, isVaultGovernorVerified } = useVaults()
 const { getEvkVaults } = useVaultRegistry()
@@ -28,8 +28,12 @@ const modal = useModal()
 const { getSupplyRewardApy, getSupplyRewardCampaigns, hasSupplyRewards } = useRewardsApy()
 const vaultAddress = computed(() => getAddress(vault.address))
 const product = useEulerProductOfVault(vaultAddress)
+const description = computed(() => {
+  return product.vaultOverrides?.[vaultAddress.value]?.description ?? product.description
+})
 const entities = useEulerEntitiesOfVault(vault as unknown as Vault)
 const isGovernorVerified = computed(() => isVaultGovernorVerified(vault as unknown as Vault))
+const isGovernanceLimited = computed(() => product.isGovernanceLimited && isGovernorVerified.value)
 const marketProductKey = computed(() => getProductKeyByVault(vault.address))
 
 const isDeprecated = computed(() => {
@@ -91,7 +95,7 @@ const shareTokenExchangeRate: Ref<bigint | undefined> = ref()
 
 const loadRiskParameters = async () => {
   try {
-    const client = getPublicClient(EVM_PROVIDER_URL)
+    const client = rpcClient.value!
     shareTokenExchangeRate.value = await client.readContract({
       address: vault.address as Address,
       abi: [{
@@ -116,7 +120,7 @@ loadRiskParameters()
 const priceDisplay = ref('-')
 
 watchEffect(async () => {
-  const price = await formatAssetValue(1, vault as unknown as Vault, 'off-chain')
+  const price = await formatAssetValue(1, vault, 'off-chain')
   priceDisplay.value = price.hasPrice ? formatUsdValue(price.usdValue) : '-'
 })
 
@@ -124,7 +128,7 @@ watchEffect(async () => {
 const totalSupplyDisplay = ref('-')
 
 watchEffect(async () => {
-  const price = await formatAssetValue(vault.totalAssets, vault as unknown as Vault, 'off-chain')
+  const price = await formatAssetValue(vault.totalAssets, vault, 'off-chain')
   totalSupplyDisplay.value = price.hasPrice ? formatCompactUsdValue(price.usdValue) : price.display
 })
 
@@ -136,7 +140,7 @@ watchEffect(async () => {
     supplyCapDisplay.value = '∞'
     return
   }
-  const price = await formatAssetValue(vault.supplyCap, vault as unknown as Vault, 'off-chain')
+  const price = await formatAssetValue(vault.supplyCap, vault, 'off-chain')
   supplyCapDisplay.value = price.hasPrice ? formatCompactUsdValue(price.usdValue) : price.display
 })
 
@@ -166,25 +170,27 @@ const supplyCapPercentageDisplay = computed(() => {
           v-if="isDeprecated && deprecationReason"
           class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
         >
-          <div class="flex items-start gap-8">
+          <div class="flex items-center gap-8">
             <SvgIcon
               name="warning"
-              class="!w-20 !h-20 flex-shrink-0 mt-2"
+              class="!w-20 !h-20 flex-shrink-0"
             />
+            <!-- eslint-disable vue/no-v-html -- trusted label content -->
             <p
               class="text-p3 text-warning-500 auto-link"
               v-html="autoLink(deprecationReason)"
             />
+            <!-- eslint-enable vue/no-v-html -->
           </div>
         </div>
         <div
           v-if="isRestricted"
           class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
         >
-          <div class="flex items-start gap-8">
+          <div class="flex items-center gap-8">
             <SvgIcon
               name="warning"
-              class="!w-20 !h-20 flex-shrink-0 mt-2"
+              class="!w-20 !h-20 flex-shrink-0"
             />
             <p class="text-p3 text-warning-500">
               This vault is not available in your region.
@@ -192,13 +198,15 @@ const supplyCapPercentageDisplay = computed(() => {
           </div>
         </div>
         <div
-          v-if="product.description"
+          v-if="description"
           class="w-full rounded-12 p-16 bg-surface-tertiary"
         >
+          <!-- eslint-disable vue/no-v-html -- trusted label content -->
           <p
             class="text-p3 text-content-secondary auto-link"
-            v-html="autoLink(product.description)"
+            v-html="autoLink(description)"
           />
+          <!-- eslint-enable vue/no-v-html -->
         </div>
         <VaultOverviewLabelValue
           label="Price"
@@ -228,6 +236,7 @@ const supplyCapPercentageDisplay = computed(() => {
               v-for="(entity, idx) in entities"
               :key="idx"
               class="flex items-center gap-8"
+              :class="{ 'opacity-20': isGovernanceLimited }"
             >
               <BaseAvatar
                 :label="entity.name"
@@ -239,17 +248,16 @@ const supplyCapPercentageDisplay = computed(() => {
                 class="text-p2 text-content-primary underline"
               >{{ entity.name }}</a>
             </div>
+            <span
+              v-if="isGovernanceLimited"
+              class="text-p3 text-content-tertiary"
+            >Limited risk management</span>
           </div>
-          <div
+          <VaultTypeChip
             v-else-if="!isGovernorVerified"
-            class="flex gap-8 items-center py-8 px-12 rounded-8 bg-[var(--c-red-opaque-200)] text-red-700"
-          >
-            <UiIcon
-              class="mr-2 !w-20 !h-20"
-              name="warning"
-            />
-            Unknown
-          </div>
+            :vault="vault"
+            type="unknown"
+          />
           <div v-else>
             -
           </div>
@@ -258,10 +266,7 @@ const supplyCapPercentageDisplay = computed(() => {
           v-if="enableVaultTypeDisplay"
           label="Vault type"
         >
-          <VaultTypeChip
-            :vault="vault as unknown as Vault"
-            type="securitize"
-          />
+          <VaultTypeBadges :vault-address="vault.address" />
         </VaultOverviewLabelValue>
         <VaultOverviewLabelValue label="Can be borrowed">
           <div class="flex items-center gap-8">
@@ -376,7 +381,7 @@ const supplyCapPercentageDisplay = computed(() => {
               class="text-accent-600 underline cursor-pointer hover:text-accent-500"
               target="_blank"
             >
-              {{ shortenAddress(vault.asset.address) }}
+              {{ getSpecialAddressLabel(vault.asset.address) || shortenAddress(vault.asset.address) }}
             </NuxtLink>
             <button
               class="text-content-muted cursor-pointer outline-none hover:text-content-secondary active:text-content-primary"
@@ -390,7 +395,7 @@ const supplyCapPercentageDisplay = computed(() => {
           </div>
         </VaultOverviewLabelValue>
         <VaultOverviewLabelValue
-          :label="`${vault.symbol} vault`"
+          :label="`${vault.asset.symbol} vault`"
           orientation="horizontal"
         >
           <div class="flex gap-4 items-center">
@@ -399,7 +404,7 @@ const supplyCapPercentageDisplay = computed(() => {
               class="text-accent-600 underline cursor-pointer hover:text-accent-500"
               target="_blank"
             >
-              {{ shortenAddress(vault.address) }}
+              {{ getSpecialAddressLabel(vault.address) || shortenAddress(vault.address) }}
             </NuxtLink>
             <button
               class="text-content-muted cursor-pointer outline-none hover:text-content-secondary active:text-content-primary"
@@ -423,7 +428,7 @@ const supplyCapPercentageDisplay = computed(() => {
               class="text-accent-600 underline cursor-pointer hover:text-accent-500"
               target="_blank"
             >
-              {{ shortenAddress(vault.governorAdmin) }}
+              {{ getSpecialAddressLabel(vault.governorAdmin) || shortenAddress(vault.governorAdmin) }}
             </NuxtLink>
             <button
               class="text-content-muted cursor-pointer outline-none hover:text-content-secondary active:text-content-primary"

@@ -6,8 +6,18 @@ import { getDefaultPageRoute } from '~/entities/menu'
 const { isConnected } = useAccount()
 
 const { open } = useAppKit()
-const { appTitle, appDescription, enableEarnPage, enableLendPage, enableExplorePage } = useDeployConfig()
-const defaultPageRoute = getDefaultPageRoute(enableEarnPage, enableLendPage, enableExplorePage)
+const {
+  appTitle,
+  appDescription,
+  enableEarnPage,
+  enableLendPage,
+  enableExplorePage,
+} = useDeployConfig()
+const defaultPageRoute = getDefaultPageRoute(
+  enableEarnPage,
+  enableLendPage,
+  enableExplorePage,
+)
 
 const isOnboardingCompleted = useLocalStorage('is-onboarding-completed', false)
 
@@ -20,12 +30,16 @@ const onConnectLaterClick = () => {
   navigateTo({ name: defaultPageRoute })
 }
 
-watch(isConnected, (value) => {
-  if (value) {
-    isOnboardingCompleted.value = true
-    navigateTo({ name: defaultPageRoute })
-  }
-}, { immediate: true })
+watch(
+  isConnected,
+  (value) => {
+    if (value) {
+      isOnboardingCompleted.value = true
+      navigateTo({ name: defaultPageRoute })
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

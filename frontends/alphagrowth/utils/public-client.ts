@@ -12,7 +12,7 @@ export const getPublicClient = (rpcUrl: string): PublicClient => {
     transport: http(rpcUrl, {
       batch: {
         batchSize: 100,
-        wait: 50,
+        wait: 100,
       },
     }),
   })

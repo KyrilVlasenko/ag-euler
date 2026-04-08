@@ -2,11 +2,11 @@
 import { useVaults } from '~/composables/useVaults'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
 import { useEulerAddresses } from '~/composables/useEulerAddresses'
-import { getAssetLogoUrl } from '~/composables/useTokens'
+import { getAssetLogoUrl } from '~/composables/useTokenList'
 import { getVaultUtilization } from '~/entities/vault'
 import type { Vault } from '~/entities/vault'
 import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
-import { getProductByVault, getEntitiesByVault, isVaultFeatured, isVaultDeprecated } from '~/utils/eulerLabelsUtils'
+import { getProductByVault, getEntitiesByVault, isVaultFeatured, isVaultDeprecated, isVaultNotExplorableLend } from '~/utils/eulerLabelsUtils'
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { useCustomFilters } from '~/composables/useCustomFilters'
 import { useVaultSearch } from '~/composables/useVaultSearch'
@@ -16,13 +16,14 @@ defineOptions({
   name: 'LendPage',
 })
 
-const { borrowList, isUpdating } = useVaults()
+const { borrowList, isEVKUpdating } = useVaults()
 const { getVerifiedEvkVaults } = useVaultRegistry()
 const { chainId } = useEulerAddresses()
 const list = computed(() => getVerifiedEvkVaults())
 
 const isPricesReady = ref(false)
-const isLoading = computed(() => isUpdating.value || !isPricesReady.value)
+const isLoading = computed(() => isEVKUpdating.value || !isPricesReady.value)
+const { isSlow } = useSlowLoading(isLoading)
 const { entities } = useEulerLabels()
 const { withIntrinsicSupplyApy } = useIntrinsicApy()
 const { getSupplyRewardApy, version: rewardsVersion } = useRewardsApy()
@@ -102,7 +103,8 @@ watch(chainId, (newChainId, oldChainId) => {
 
 const borrowableVaults = computed(() => {
   return list.value.filter(vault =>
-    borrowList.value.some(pair => pair.borrow.address === vault.address),
+    !isVaultNotExplorableLend(vault.address)
+    && borrowList.value.some(pair => pair.borrow.address === vault.address),
   )
 })
 
@@ -315,10 +317,16 @@ const sortedList = computed(() => {
     </div>
 
     <div class="flex flex-col flex-1">
-      <UiLoader
+      <div
         v-if="isLoading"
-        class="flex-1 self-center justify-self-center"
-      />
+        class="flex flex-col flex-1 items-center justify-center gap-12"
+      >
+        <UiLoader />
+        <span
+          v-if="isSlow"
+          class="text-p2 text-content-tertiary text-center max-w-[240px]"
+        >Loading is taking longer than usual. Please check your connection.</span>
+      </div>
 
       <VaultsList
         v-else-if="sortedList.length"

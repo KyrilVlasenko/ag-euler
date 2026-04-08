@@ -1,7 +1,14 @@
 <script setup lang="ts">
+import { HIGH_SLIPPAGE_THRESHOLD } from '~/entities/constants'
 import { formatNumber } from '~/utils/string-utils'
 
-const { slippage, setSlippage, minSlippage, maxSlippage } = useSlippage()
+const _props = withDefaults(defineProps<{
+  deferSave?: boolean
+}>(), {
+  deferSave: false,
+})
+
+const { slippage, setSlippage, minSlippage, maxSlippage, defaultSlippage, isOverrideActive } = useSlippage()
 
 const slippagePresets = [
   { label: '0.1%', value: 0.1 },
@@ -15,10 +22,17 @@ const customInput = ref('')
 const customInputError = ref('')
 const slippageSelection = useLocalStorage<'preset' | 'custom'>('swap-slippage-selection', 'preset')
 
+// Reset selection state when override expires back to a preset default
+if (!isOverrideActive.value && presetValues.includes(slippage.value)) {
+  slippageSelection.value = 'preset'
+}
+
 const isCustomSelected = computed(() => slippageSelection.value === 'custom')
 const isCustomValue = computed(() => !presetValues.includes(slippage.value))
 const customChipActive = computed(() => isCustomInputVisible.value || isCustomSelected.value || isCustomValue.value)
 const customChipValue = computed(() => `${formatNumber(slippage.value, 2, 0)}%`)
+
+const isHighSlippage = computed(() => slippage.value > HIGH_SLIPPAGE_THRESHOLD)
 
 const onPresetSelect = (value: number) => {
   isCustomInputVisible.value = false
@@ -38,15 +52,33 @@ const parseCustomSlippage = (value: string | number | null | undefined) => {
   if (!Number.isFinite(parsed)) {
     return null
   }
-  return Math.min(maxSlippage, Math.max(minSlippage, parsed))
+  if (parsed > maxSlippage) {
+    return null
+  }
+  return Math.max(minSlippage, parsed)
 }
 
 const parsedCustomSlippage = computed(() => parseCustomSlippage(customInput.value))
 
+const rawCustomValue = computed(() => {
+  const normalized = String(customInput.value ?? '').replace(/%/g, '').replace(',', '.').trim()
+  const parsed = Number.parseFloat(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+})
+
+const isInputOverMax = computed(() => {
+  return rawCustomValue.value !== null && rawCustomValue.value > maxSlippage
+})
+
+const isInputHighSlippage = computed(() => {
+  const parsed = parsedCustomSlippage.value
+  return parsed !== null && parsed > HIGH_SLIPPAGE_THRESHOLD
+})
+
 const onSaveCustom = () => {
   const parsed = parsedCustomSlippage.value
   if (parsed === null) {
-    customInputError.value = `Enter a value between ${minSlippage} and ${maxSlippage}`
+    customInputError.value = `Enter a value between ${minSlippage}% and ${maxSlippage}%`
     return
   }
   customInputError.value = ''
@@ -73,18 +105,42 @@ watch(customInput, () => {
     customInputError.value = ''
   }
 })
+
+const savePending = (): boolean => {
+  if (!isCustomInputVisible.value) return true
+  const parsed = parsedCustomSlippage.value
+  if (parsed === null) {
+    customInputError.value = `Enter a value between ${minSlippage}% and ${maxSlippage}%`
+    return false
+  }
+  customInputError.value = ''
+  setSlippage(parsed)
+  slippageSelection.value = 'custom'
+  isCustomInputVisible.value = false
+  return true
+}
+
+defineExpose({ savePending })
 </script>
 
 <template>
-  <div class="mb-20 rounded-16 border border-euler-dark-600 bg-euler-dark-500 p-16">
+  <div class="mb-20 rounded-16 border border-line-default bg-card p-16">
     <div class="flex flex-col gap-8">
       <div class="text-p2">
         Slippage settings
       </div>
-      <div class="text-p3 text-euler-dark-700">
-        Default slippage for swaps
+      <div class="text-p3 text-content-muted">
+        <template v-if="isOverrideActive && slippage > 0.5">
+          Custom slippage (resets to {{ defaultSlippage }}% default after 24h)
+        </template>
+        <template v-else-if="defaultSlippage !== 0.5">
+          Default: {{ defaultSlippage }}% for stablecoin swaps
+        </template>
+        <template v-else>
+          Default slippage for swaps is {{ defaultSlippage }}%
+        </template>
       </div>
-      <div class="flex flex-wrap gap-8 rounded-[32px] bg-euler-dark-600 p-6">
+      <div class="flex flex-wrap gap-8 rounded-[32px] bg-surface-secondary p-6">
         <button
           v-for="option in slippagePresets"
           :key="option.value"
@@ -101,7 +157,7 @@ watch(customInput, () => {
         >
           <span v-if="isCustomSelected && !isCustomInputVisible">
             Custom
-            <span class="text-euler-dark-500 font-semibold">{{ customChipValue }}</span>
+            <span class="text-content-primary font-semibold">{{ customChipValue }}</span>
           </span>
           <span v-else>
             Set custom
@@ -122,6 +178,7 @@ watch(customInput, () => {
           @keyup.enter="onSaveCustom"
         />
         <UiButton
+          v-if="!deferSave"
           size="medium"
           @click="onSaveCustom"
         >
@@ -133,6 +190,24 @@ watch(customInput, () => {
         class="text-p4 text-red-500"
       >
         {{ customInputError }}
+      </div>
+      <div
+        v-else-if="isCustomInputVisible && isInputOverMax"
+        class="text-p4 text-red-500"
+      >
+        Maximum slippage is {{ maxSlippage }}%
+      </div>
+      <div
+        v-else-if="isCustomInputVisible && isInputHighSlippage"
+        class="text-p4 text-warning-500"
+      >
+        High slippage may result in significant losses
+      </div>
+      <div
+        v-else-if="!isCustomInputVisible && isHighSlippage"
+        class="text-p4 text-warning-500"
+      >
+        Slippage is set to {{ formatNumber(slippage, 2, 0) }}%. This may result in significant losses.
       </div>
     </div>
   </div>

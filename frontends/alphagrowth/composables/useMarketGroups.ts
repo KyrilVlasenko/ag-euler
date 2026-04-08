@@ -5,7 +5,7 @@ import type { MarketGroup, MarketGroupMetrics, CuratorGroup } from '~/entities/l
 import type { AnyVault } from '~/composables/useVaultRegistry'
 import { getVaultUtilization } from '~/entities/vault'
 import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
-import { isVaultFeatured } from '~/utils/eulerLabelsUtils'
+import { isVaultNotExplorable, isVaultFeatured } from '~/utils/eulerLabelsUtils'
 
 // -- Helpers --
 
@@ -324,7 +324,12 @@ export const useMarketGroups = () => {
 
   /** All vaults available for grouping */
   const allVaults = computed((): AnyVault[] => {
-    return getAll().map(entry => entry.vault)
+    return getAll()
+      .map(entry => entry.vault)
+      .filter((vault) => {
+        const address = getVaultAddress(vault)
+        return address ? !isVaultNotExplorable(address) : true
+      })
   })
 
   /** Synchronous market groups (metrics without TVL) */
@@ -348,26 +353,35 @@ export const useMarketGroups = () => {
   /** Market groups with async TVL resolution */
   const marketGroups = ref<MarketGroup[]>([])
   const isResolvingTVL = ref(false)
+  let resolveRunId = 0
 
   watch(
     marketGroupsSync,
     async (groups: MarketGroup[]) => {
-      if (groups.length === 0) return
+      const runId = ++resolveRunId
+      if (groups.length === 0) {
+        marketGroups.value = []
+        isResolvingTVL.value = false
+        return
+      }
 
       isResolvingTVL.value = true
       try {
         const resolved = await Promise.all(groups.map(resolveGroupTVL))
-        marketGroups.value = resolved
+        if (runId === resolveRunId) {
+          marketGroups.value = resolved
+        }
       }
       catch (e) {
         logWarn('useMarketGroups', e)
-        // On failure, show structural data without TVL as fallback
-        if (marketGroups.value.length === 0) {
+        if (runId === resolveRunId) {
           marketGroups.value = groups
         }
       }
       finally {
-        isResolvingTVL.value = false
+        if (runId === resolveRunId) {
+          isResolvingTVL.value = false
+        }
       }
     },
     { immediate: true },

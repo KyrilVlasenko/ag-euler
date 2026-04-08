@@ -22,6 +22,7 @@ defineProps<{
           :asset="{ address: step.assetInfo.address || '', symbol: step.assetInfo.symbol }"
           :icon-url="step.assetInfo.iconUrl"
           size="16"
+          :increased-spacing="true"
         />
         <p
           v-if="!step.iconOnly"

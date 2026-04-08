@@ -2,17 +2,21 @@
 import type { MarketGroup } from '~/entities/lend-discovery'
 import { formatCompactUsdValue, formatNumber, stringToColor } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
-import { getAssetLogoUrl } from '~/composables/useTokens'
+import { getAssetLogoUrl } from '~/composables/useTokenList'
 import {
   getMarketEntities,
   getDeprecatedVaultCount,
   getMiniDiagram,
   getBorrowableVaults,
   findVault,
-  type BestNetApyResult,
+  type BestMaxRoeResult,
 } from '~/utils/discoveryCalculations'
+import { isVaultKeyring } from '~/utils/eulerLabelsUtils'
+import { getMaxMultiplier, getMaxRoe } from '~/utils/leverage'
+import { useModal } from '~/components/ui/composables/useModal'
+import { VaultMaxRoeModal } from '#components'
 
-defineProps<{
+const props = defineProps<{
   market: MarketGroup
   isExpanded: boolean
 }>()
@@ -22,19 +26,38 @@ defineEmits<{
 }>()
 
 const { withIntrinsicSupplyApy, withIntrinsicBorrowApy } = useIntrinsicApy()
-const { getBorrowRewardApy, getSupplyRewardApy } = useRewardsApy()
+const { getBorrowRewardApy, getSupplyRewardApy, getLoopingRewardApy } = useRewardsApy()
 const { products } = useEulerLabels()
+const modal = useModal()
+
+const isGovernanceLimited = computed(() =>
+  props.market.source === 'product' && !!products[props.market.id]?.isGovernanceLimited,
+)
+
+const isKeyring = computed(() => {
+  if (props.market.source === 'product' && products[props.market.id]?.keyring) return true
+  return props.market.vaults.some((v) => {
+    const addr = 'address' in v ? v.address : ''
+    return addr && isVaultKeyring(addr)
+  })
+})
 
 const getProductDescription = (market: MarketGroup): string => {
   if (market.source !== 'product') return ''
   return products[market.id]?.description ?? ''
 }
 
-const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
+const getBestMaxRoe = (market: MarketGroup): BestMaxRoeResult => {
   const borrowable = getBorrowableVaults(market)
   let best = -Infinity
   let bestHasRewards = false
   let bestPair = ''
+  let bestMultiplier = 1
+  let bestSupplyAPY = 0
+  let bestBorrowAPY = 0
+  let bestBorrowLTV = 0
+  let bestBorrowVaultAddress = ''
+  let bestCollateralAddress = ''
 
   for (const liability of borrowable) {
     const borrowBase = nanoToValue(liability.interestRateInfo.borrowAPY, 25)
@@ -49,17 +72,56 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
       const supplyApy = withIntrinsicSupplyApy(supplyBase, collateral.asset.address)
       const supplyRewards = getSupplyRewardApy(collateral.address)
       const borrowRewards = getBorrowRewardApy(liability.address, collateral.address)
+      const loopingRewards = getLoopingRewardApy(liability.address, collateral.address)
 
-      const netApy = (supplyApy + supplyRewards) - (borrowApy - borrowRewards)
-      if (netApy > best) {
-        best = netApy
-        bestHasRewards = supplyRewards > 0 || borrowRewards > 0
+      const supplyFinal = supplyApy + supplyRewards
+      const borrowFinal = borrowApy - borrowRewards
+      const multiplier = getMaxMultiplier(ltv.borrowLTV)
+      const roe = getMaxRoe(multiplier, supplyFinal, borrowFinal, loopingRewards)
+
+      if (roe > best) {
+        best = roe
+        bestHasRewards = supplyRewards > 0 || borrowRewards > 0 || loopingRewards > 0
         bestPair = `${collateral.asset.symbol}/${liability.asset.symbol}`
+        bestMultiplier = multiplier
+        bestSupplyAPY = supplyFinal
+        bestBorrowAPY = borrowFinal
+        bestBorrowLTV = nanoToValue(ltv.borrowLTV, 2)
+        bestBorrowVaultAddress = liability.address
+        bestCollateralAddress = collateral.address
       }
     }
   }
 
-  return { value: Number.isFinite(best) && best > -Infinity ? best : 0, hasRewards: bestHasRewards, pair: bestPair }
+  const value = Number.isFinite(best) && best > -Infinity ? best : 0
+  return {
+    value,
+    hasRewards: bestHasRewards,
+    pair: bestPair,
+    maxMultiplier: bestMultiplier,
+    supplyAPY: bestSupplyAPY,
+    borrowAPY: bestBorrowAPY,
+    borrowLTV: bestBorrowLTV,
+    borrowVaultAddress: bestBorrowVaultAddress,
+    collateralAddress: bestCollateralAddress,
+  }
+}
+
+const onMaxRoeInfoIconClick = (event: MouseEvent, result: BestMaxRoeResult) => {
+  event.preventDefault()
+  event.stopPropagation()
+  modal.open(VaultMaxRoeModal, {
+    props: {
+      maxRoe: result.value,
+      maxMultiplier: result.maxMultiplier,
+      supplyAPY: result.supplyAPY,
+      borrowAPY: result.borrowAPY,
+      borrowLTV: result.borrowLTV,
+      borrowVaultAddress: result.borrowVaultAddress,
+      collateralAddress: result.collateralAddress,
+      isBestInMarket: true,
+    },
+  })
 }
 </script>
 
@@ -68,7 +130,7 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
     class="w-full text-left cursor-pointer p-16"
     @click="$emit('toggle')"
   >
-    <div class="flex items-start pb-12 border-b border-line-subtle mobile:flex-wrap">
+    <div class="flex items-center pb-12 border-b border-line-subtle">
       <template
         v-for="(marketEntities, entitiesIdx) in [getMarketEntities(market)]"
         :key="'entities-' + entitiesIdx"
@@ -76,6 +138,7 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
         <BaseAvatar
           v-if="marketEntities.logos.length > 0"
           class="icon--40 shrink-0"
+          :class="{ 'opacity-20': isGovernanceLimited }"
           :src="marketEntities.logos"
           :label="marketEntities.name"
         />
@@ -84,9 +147,10 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
           :class="marketEntities.logos.length > 0 ? 'ml-12' : ''"
         >
           <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-8">
-            <template v-if="marketEntities.name">
-              {{ marketEntities.name }}
-            </template>
+            <span
+              v-if="marketEntities.name"
+              :class="{ 'opacity-20': isGovernanceLimited }"
+            >{{ marketEntities.name }}</span>
             <template v-else-if="market.curator">
               {{ market.curator.name }}
             </template>
@@ -103,6 +167,7 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
               />
               Featured
             </span>
+            <KeyringBadge v-if="isKeyring" />
           </div>
           <div class="text-h5 text-content-primary">
             {{ market.name }}
@@ -120,12 +185,12 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
         v-for="(diagram, diagramIdx) in [getMiniDiagram(market)]"
         :key="'counts-' + diagramIdx"
       >
-        <div class="flex flex-col items-end shrink-0 ml-12 text-content-tertiary text-p3 mobile:flex-row mobile:w-full mobile:items-center mobile:gap-8 mobile:mt-8 mobile:ml-0">
+        <div class="flex flex-col items-end shrink-0 ml-12 text-content-tertiary text-p3">
           <span>{{ diagram.assetCount }} assets</span>
           <span class="text-content-muted">{{ diagram.pairCount }} pairs</span>
           <span
             v-if="getDeprecatedVaultCount(market) > 0"
-            class="text-warning-500 text-p5 mt-4 mobile:mt-0"
+            class="text-warning-500 text-p5 mt-4"
           >
             {{ getDeprecatedVaultCount(market) }} deprecated
           </span>
@@ -133,8 +198,8 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
       </template>
     </div>
 
-    <div class="flex pt-12 items-center mobile:flex-wrap mobile:gap-y-12">
-      <div class="flex-1 flex gap-12 mobile:grid mobile:grid-cols-2 mobile:gap-y-12 mobile:gap-x-12">
+    <div class="flex pt-12 items-center mobile:justify-between mobile:border-b mobile:border-line-subtle mobile:pb-12">
+      <div class="flex-1 flex gap-12 mobile:hidden">
         <div class="flex-1 min-w-0">
           <div class="text-content-tertiary text-p3 mb-4">
             Total supply
@@ -160,30 +225,56 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
           </div>
         </div>
         <template
-          v-for="(bestNet, bestNetIdx) in [getBestNetApy(market)]"
-          :key="'net-apy-' + bestNetIdx"
+          v-for="(bestRoe, bestRoeIdx) in [getBestMaxRoe(market)]"
+          :key="'max-roe-' + bestRoeIdx"
         >
-          <div
-            v-if="bestNet.value !== 0"
-            class="flex-1 min-w-0"
-          >
-            <div class="text-content-tertiary text-p3 mb-4">
-              Best net APY
-            </div>
-            <div class="text-p2 text-content-primary flex items-center gap-4 min-w-0 mobile:overflow-hidden">
-              <SvgIcon
-                v-if="bestNet.hasRewards"
-                name="sparks"
-                class="!w-12 !h-12 text-accent-500 shrink-0"
-              />
-              <span class="shrink-0">{{ formatNumber(bestNet.value, 2, 2) }}%</span>
-              <span
-                v-if="bestNet.pair"
-                class="text-p4 text-content-muted min-w-0 truncate"
-              >{{ bestNet.pair }}</span>
-            </div>
+          <div class="flex-1 min-w-0">
+            <template v-if="bestRoe.value > 0">
+              <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
+                Best max ROE
+                <SvgIcon
+                  class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+                  name="info-circle"
+                  @click="onMaxRoeInfoIconClick($event, bestRoe)"
+                />
+              </div>
+              <div class="text-p2 text-content-primary flex items-center gap-4 min-w-0">
+                <SvgIcon
+                  v-if="bestRoe.hasRewards"
+                  name="sparks"
+                  class="!w-20 !h-20 text-accent-500 shrink-0 cursor-pointer hover:text-accent-400 transition-colors"
+                  @click="onMaxRoeInfoIconClick($event, bestRoe)"
+                />
+                <span class="shrink-0">{{ formatNumber(bestRoe.value, 2, 2) }}%</span>
+                <span
+                  v-if="bestRoe.pair"
+                  class="text-p4 text-content-muted min-w-0"
+                  :class="isExpanded ? '' : 'truncate'"
+                >{{ bestRoe.pair }}</span>
+              </div>
+            </template>
           </div>
         </template>
+      </div>
+
+      <!-- Mobile: 2-column row matching lend card style -->
+      <div class="hidden mobile:flex mobile:flex-1 mobile:justify-between">
+        <div>
+          <div class="text-content-tertiary text-p3 mb-4">
+            Total supply
+          </div>
+          <div class="text-p2 text-content-primary">
+            {{ formatCompactUsdValue(market.metrics.totalTVL) }}
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-content-tertiary text-p3 mb-4">
+            Available liquidity
+          </div>
+          <div class="text-p2 text-content-primary">
+            {{ formatCompactUsdValue(market.metrics.totalAvailableLiquidity) }}
+          </div>
+        </div>
       </div>
 
       <!-- Mini topology graph (non-clickable preview) -->
@@ -208,7 +299,7 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
               :y1="edge.from.y"
               :x2="edge.to.x"
               :y2="edge.to.y"
-              :stroke="edge.mutual ? '#6b7280' : '#4b5563'"
+              :style="{ stroke: edge.mutual ? 'var(--graph-edge-mutual)' : 'var(--graph-edge)' }"
               :stroke-width="edge.mutual ? 1.2 : 1"
               stroke-linecap="round"
               :opacity="edge.mutual ? 0.8 : 0.5"
@@ -228,8 +319,7 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
                 :cx="node.x"
                 :cy="node.y"
                 r="6"
-                :fill="getAssetLogoUrl(node.assetAddress, node.assetSymbol) ? '#1f2937' : stringToColor(node.assetSymbol)"
-                stroke="#4b5563"
+                :style="{ fill: getAssetLogoUrl(node.assetAddress, node.assetSymbol) ? 'var(--graph-node-bg)' : stringToColor(node.assetSymbol), stroke: 'var(--graph-node-border)' }"
                 stroke-width="0.5"
               />
               <image
@@ -246,12 +336,58 @@ const getBestNetApy = (market: MarketGroup): BestNetApyResult => {
                 :x="node.x"
                 :y="node.y + 2"
                 text-anchor="middle"
-                fill="white"
+                style="fill: var(--graph-node-text)"
                 font-size="5"
                 font-weight="600"
               >{{ node.assetSymbol.slice(0, 2) }}</text>
             </g>
           </svg>
+        </div>
+      </template>
+    </div>
+
+    <!-- Mobile: additional rows matching lend card style -->
+    <div class="hidden mobile:flex mobile:flex-col gap-12 py-12 px-0">
+      <div class="flex w-full justify-between">
+        <div class="text-content-tertiary text-p3">
+          Total borrowed
+        </div>
+        <div class="text-p2 text-content-primary">
+          {{ formatCompactUsdValue(market.metrics.totalBorrowed) }}
+        </div>
+      </div>
+      <template
+        v-for="(bestRoe, bestRoeIdx) in [getBestMaxRoe(market)]"
+        :key="'max-roe-mobile-' + bestRoeIdx"
+      >
+        <div
+          v-if="bestRoe.value > 0"
+          class="flex w-full justify-between"
+        >
+          <div class="text-content-tertiary text-p3 flex items-center gap-4 whitespace-nowrap">
+            Best max ROE
+            <SvgIcon
+              class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+              name="info-circle"
+              @click="onMaxRoeInfoIconClick($event, bestRoe)"
+            />
+          </div>
+          <div class="text-p2 text-content-primary flex flex-wrap items-center justify-end gap-x-4">
+            <span class="flex items-center gap-4 shrink-0">
+              <SvgIcon
+                v-if="bestRoe.hasRewards"
+                name="sparks"
+                class="!w-20 !h-20 text-accent-500 shrink-0 cursor-pointer hover:text-accent-400 transition-colors"
+                @click="onMaxRoeInfoIconClick($event, bestRoe)"
+              />
+              {{ formatNumber(bestRoe.value, 2, 2) }}%
+            </span>
+            <span
+              v-if="bestRoe.pair"
+              class="text-p4 text-content-muted"
+              :class="isExpanded ? '' : 'truncate max-w-[100px]'"
+            >{{ bestRoe.pair }}</span>
+          </div>
         </div>
       </template>
     </div>

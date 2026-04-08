@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Vault } from '~/entities/vault'
 import { getExplorerLink } from '~/utils/block-explorer'
+import { getSpecialAddressLabel } from '~/utils/special-addresses'
 
 const { vault } = defineProps<{ vault: Vault }>()
 
@@ -48,15 +49,15 @@ const vaultAddresesInfo = computed(() => {
         address: vault.governorFeeReceiver,
       },
       {
-        title: `Oracle router address`,
+        title: `Oracle router`,
         address: vault.oracle,
       },
       {
-        title: `Unit of account address`,
+        title: `Unit of account`,
         address: vault.unitOfAccount,
       },
       {
-        title: `Interest rate model address`,
+        title: `Interest rate model`,
         address: vault.interestRateModelAddress,
       },
     )
@@ -95,13 +96,26 @@ const getExplorerAddressLink = (address: string) => getExplorerLink(address, cha
         :label="infoItem.title"
         orientation="horizontal"
       >
+        <template
+          v-if="infoItem.title === 'Unit of account'"
+          #label
+        >
+          <span class="flex items-center gap-4">
+            Unit of account
+            <UiFootnote
+              title="Unit of Account"
+              text="The reference currency used to denominate prices for LTV and health calculations in this vault. Typically USD or ETH. All collateral and debt values are converted to this unit when determining account health."
+              class="[--ui-footnote-icon-color:var(--text-muted)] hover:[--ui-footnote-icon-color:var(--text-secondary)]"
+            />
+          </span>
+        </template>
         <div class="flex gap-4 items-center">
           <NuxtLink
             :to="getExplorerAddressLink(infoItem.address)"
             class="text-accent-600 underline cursor-pointer hover:text-accent-500"
             target="_blank"
           >
-            {{ shortenAddress(infoItem.address) }}
+            {{ getSpecialAddressLabel(infoItem.address) || shortenAddress(infoItem.address) }}
           </NuxtLink>
           <button
             class="text-content-muted cursor-pointer outline-none hover:text-content-secondary active:text-content-primary"

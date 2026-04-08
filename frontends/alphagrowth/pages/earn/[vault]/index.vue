@@ -2,7 +2,6 @@
 import { useAccount } from '@wagmi/vue'
 import { useModal } from '~/components/ui/composables/useModal'
 import { OperationReviewModal, VaultSupplyApyModal, VaultUnverifiedDisclaimerModal } from '#components'
-import { useTermsOfUseGate } from '~/composables/useTermsOfUseGate'
 import { useToast } from '~/components/ui/composables/useToast'
 import type { EarnVault, VaultAsset } from '~/entities/vault'
 import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
@@ -12,19 +11,19 @@ import { isVaultBlockedByCountry } from '~/composables/useGeoBlock'
 import VaultFormInfoBlock from '~/components/entities/vault/form/VaultFormInfoBlock.vue'
 import VaultFormSubmit from '~/components/entities/vault/form/VaultFormSubmit.vue'
 import { formatNumber, compactNumber } from '~/utils/string-utils'
+import { isOperationBlocked } from '~/utils/operationGuardRegistry'
 
 const router = useRouter()
 const route = useRoute()
 const modal = useModal()
 const { error } = useToast()
-const { getSubmitLabel, getSubmitDisabled, guardWithTerms } = useTermsOfUseGate()
-const reviewSupplyLabel = getSubmitLabel('Review Supply')
 const { buildSupplyPlan, executeTxPlan } = useEulerOperations()
 const { getEarnVault, updateEarnVault } = useVaults()
 const { isConnected, address } = useAccount()
 const { fetchSingleBalance } = useWallets()
 const { runSimulation, simulationError, clearSimulationError } = useTxPlanSimulation()
 const vaultAddress = route.params.vault as string
+useOperationGuard([vaultAddress])
 const { name } = useEulerProductOfVault(vaultAddress)
 const { getIntrinsicApy, getIntrinsicApyInfo } = useIntrinsicApy()
 const { getSupplyRewardApy, hasSupplyRewards, getSupplyRewardCampaigns } = useRewardsApy()
@@ -50,29 +49,31 @@ const fetchBalance = async () => {
   balance.value = await fetchSingleBalance(asset.value.address)
 }
 
-// Load vault data with top-level await
-try {
-  vault.value = await getEarnVault(vaultAddress)
-  asset.value = vault.value?.asset
+// Non-blocking to avoid Suspense + pageTransition crash on direct navigation
+;(async () => {
+  try {
+    vault.value = await getEarnVault(vaultAddress)
+    asset.value = vault.value?.asset
 
-  // Fetch fresh underlying asset balance for this specific vault
-  await fetchBalance()
+    // Fetch fresh underlying asset balance for this specific vault
+    await fetchBalance()
 
-  if (!vault.value?.verified) {
-    modal.open(VaultUnverifiedDisclaimerModal, {
-      isNotClosable: true,
-      props: {
-        onCancel: () => {
-          router.replace('/')
+    if (!vault.value?.verified) {
+      modal.open(VaultUnverifiedDisclaimerModal, {
+        isNotClosable: true,
+        props: {
+          cancelAction: () => {
+            router.replace('/')
+          },
         },
-      },
-    })
+      })
+    }
   }
-}
-catch (e) {
-  showError('Unable to load Vault')
-  console.warn(e)
-}
+  catch (e) {
+    showError('Unable to load Vault')
+    logWarn('[earn] failed to load vault', e)
+  }
+})()
 const errorText = computed(() => {
   if (balance.value < valueToNano(amount.value, asset.value?.decimals)) {
     return 'Not enough balance'
@@ -86,7 +87,7 @@ const isSubmitDisabled = computed(() => {
     || isLoading.value || !(+amount.value)
 })
 const isGeoBlocked = computed(() => isVaultBlockedByCountry(vaultAddress))
-const reviewSupplyDisabled = getSubmitDisabled(computed(() => isGeoBlocked.value || isSubmitDisabled.value))
+const reviewSupplyDisabled = computed(() => isGeoBlocked.value || isSubmitDisabled.value)
 const totalRewardsAPY = computed(() => getSupplyRewardApy(vaultAddress))
 const hasRewards = computed(() => hasSupplyRewards(vaultAddress))
 const intrinsicApy = computed(() => getIntrinsicApy(vault.value?.asset.address))
@@ -98,48 +99,47 @@ const estimateSupplyAPYDisplay = computed(() => {
   return formatNumber(estimateSupplyAPY.value)
 })
 const submit = async () => {
+  if (isOperationBlocked.value) return
   if (isPreparing.value || isGeoBlocked.value) return
   isPreparing.value = true
   try {
-    await guardWithTerms(async () => {
-      if (!asset.value?.address) {
+    if (!asset.value?.address) {
+      return
+    }
+
+    try {
+      plan.value = await buildSupplyPlan(
+        vaultAddress,
+        asset.value.address,
+        valueToNano(amount.value || '0', asset.value.decimals),
+        undefined,
+        { includePermit2Call: false },
+      )
+    }
+    catch (e) {
+      console.warn('[OperationReviewModal] failed to build plan', e)
+      plan.value = null
+    }
+
+    if (plan.value) {
+      const ok = await runSimulation(plan.value)
+      if (!ok) {
         return
       }
+    }
 
-      try {
-        plan.value = await buildSupplyPlan(
-          vaultAddress,
-          asset.value.address,
-          valueToNano(amount.value || '0', asset.value.decimals),
-          undefined,
-          { includePermit2Call: false },
-        )
-      }
-      catch (e) {
-        console.warn('[OperationReviewModal] failed to build plan', e)
-        plan.value = null
-      }
-
-      if (plan.value) {
-        const ok = await runSimulation(plan.value)
-        if (!ok) {
-          return
-        }
-      }
-
-      modal.open(OperationReviewModal, {
-        props: {
-          type: 'supply',
-          asset: asset.value,
-          amount: amount.value,
-          plan: plan.value || undefined,
-          onConfirm: () => {
-            setTimeout(() => {
-              send()
-            }, 400)
-          },
+    modal.open(OperationReviewModal, {
+      props: {
+        type: 'supply',
+        asset: asset.value,
+        amount: amount.value,
+        plan: plan.value || undefined,
+        onConfirm: () => {
+          setTimeout(() => {
+            send()
+          }, 400)
         },
-      })
+      },
     })
   }
   finally {
@@ -197,6 +197,7 @@ const onSupplyInfoIconClick = () => {
       intrinsicAPY: intrinsicApy.value,
       intrinsicApyInfo: getIntrinsicApyInfo(vault.value?.asset.address),
       campaigns: getSupplyRewardCampaigns(vaultAddress),
+      baseApyAverageLabel: '1h',
     },
   })
 }
@@ -231,37 +232,46 @@ watch(address, () => {
 
 <template>
   <div>
-    <BaseBackButton class="laptop:!hidden mb-16" />
-    <h1 class="text-p1 mb-16">
-      Open earn position
-    </h1>
-    <div class="flex gap-32">
-      <div class="hidden laptop:!block laptop:flex-[55] min-w-0">
-        <VaultOverviewEarn
-          v-if="vault"
-          :vault="vault as EarnVault"
-          desktop-overview
-          @vault-click="(address: string) => router.push(`/lend/${address}`)"
-        />
-      </div>
-      <div class="flex flex-col gap-16 w-full laptop:flex-[45] laptop:sticky laptop:top-[88px] laptop:self-start">
-        <VaultForm
-          class="w-full"
-          @submit.prevent="submit"
-        >
-          <div
-            v-if="vault && asset"
-            class="flex justify-between"
-          >
-            <VaultLabelsAndAssets
-              :vault="vault"
-              :assets="assets"
-              size="large"
-            />
+    <div
+      v-if="!vault"
+      class="flex justify-center items-center min-h-[50dvh]"
+    >
+      <UiLoader />
+    </div>
+    <template v-else>
+      <BaseBackButton class="laptop:!hidden mb-16" />
 
-            <div class="flex flex-col items-end justify-end">
-              <p class="mb-4 text-content-tertiary flex items-center gap-4">
+      <VaultLabelsAndAssets
+        v-if="asset"
+        class="mb-24"
+        :vault="vault"
+        :assets="assets"
+        size="large"
+      />
+
+      <div class="flex gap-32">
+        <div class="hidden laptop:!block laptop:flex-[55] min-w-0">
+          <VaultOverviewEarn
+            v-if="vault"
+            :vault="vault as EarnVault"
+            desktop-overview
+            @vault-click="(address: string) => router.push({ path: `/lend/${address}`, query: { network: route.query.network } })"
+          />
+        </div>
+        <div class="flex flex-col gap-16 w-full laptop:flex-[45] laptop:sticky laptop:top-[88px] laptop:self-start">
+          <VaultForm
+            class="w-full"
+            @submit.prevent="submit"
+          >
+            <div
+              v-if="vault && asset"
+              class="flex items-center justify-between"
+            >
+              <p class="text-h3 text-content-tertiary flex items-center gap-4">
                 Supply APY
+                <span class="inline-flex items-center rounded-8 px-8 py-2 bg-accent-100 text-accent-600 text-p5">
+                  1h
+                </span>
                 <SvgIcon
                   class="!w-20 !h-20 text-content-muted cursor-pointer hover:text-content-secondary"
                   name="info-circle"
@@ -269,13 +279,13 @@ watch(address, () => {
                 />
               </p>
 
-              <p class="flex justify-end gap-4 text-h3">
+              <p class="flex items-center gap-4 text-h3">
                 <VaultPoints
                   :vault="vault"
                 />
                 <SvgIcon
                   v-if="hasRewards"
-                  class="!w-24 !h-24 text-aquamarine-700 cursor-pointer"
+                  class="!w-24 !h-24 text-accent-500 cursor-pointer"
                   name="sparks"
                   @click="onSupplyInfoIconClick"
                 />
@@ -284,81 +294,82 @@ watch(address, () => {
                 </span>
               </p>
             </div>
-          </div>
 
-          <AssetInput
-            v-if="asset"
-            v-model="amount"
-            label="Deposit amount"
-            :desc="name"
-            :asset="asset"
-            :vault="vault"
-            :balance="balance"
-            maxable
-          />
-
-          <UiToast
-            v-if="isGeoBlocked"
-            title="Region restricted"
-            description="This operation is not available in your region. You can still withdraw existing deposits."
-            variant="warning"
-            size="compact"
-          />
-          <UiToast
-            v-show="errorText"
-            title="Error"
-            variant="error"
-            :description="errorText || ''"
-            size="compact"
-          />
-          <UiToast
-            v-if="simulationError"
-            title="Error"
-            variant="error"
-            :description="simulationError"
-            size="compact"
-          />
-
-          <VaultFormInfoBlock
-            v-if="vault && asset"
-            :loading="isEstimatesLoading"
-          >
-            <SummaryRow
-              label="Projected earnings per month"
-              align-top
-            >
-              <p class="text-content-tertiary">
-                <span class="text-content-primary text-p2">{{ compactNumber(monthlyEarnings, 4) }}</span> {{
-                  asset.symbol
-                }}
-                ≈ ${{ compactNumber(monthlyEarningsUsd) }}
-              </p>
-            </SummaryRow>
-
-            <SummaryRow label="Supply APY">
-              <SummaryValue
-                :after="estimateSupplyAPYDisplay"
-                suffix="%"
-                estimate-only
-              />
-            </SummaryRow>
-          </VaultFormInfoBlock>
-
-          <template #buttons>
-            <VaultFormInfoButton
-              :earn-vault="vault"
-              class="laptop:!hidden"
-              :disabled="isLoading || isSubmitting"
+            <AssetInput
+              v-if="asset"
+              v-model="amount"
+              label="Supply amount"
+              :desc="name"
+              :asset="asset"
+              :vault="vault"
+              :balance="balance"
+              maxable
             />
-            <VaultFormSubmit
-              :disabled="reviewSupplyDisabled"
-              :loading="isSubmitting || isPreparing"
+
+            <UiToast
+              v-if="isGeoBlocked"
+              title="Region restricted"
+              description="This operation is not available in your region. You can still withdraw existing deposits."
+              variant="warning"
+              size="compact"
+            />
+            <UiToast
+              v-show="errorText"
+              title="Error"
+              variant="error"
+              :description="errorText || ''"
+              size="compact"
+            />
+            <UiToast
+              v-if="simulationError"
+              title="Error"
+              variant="error"
+              :description="simulationError"
+              size="compact"
+            />
+
+            <VaultFormInfoBlock
+              v-if="vault && asset"
+              :loading="isEstimatesLoading"
+              variant="card"
             >
-              {{ reviewSupplyLabel }}
-            </VaultFormSubmit>
-          </template>
-        </VaultForm>
+              <SummaryRow
+                label="Projected earnings per month"
+                align-top
+              >
+                <p class="text-content-tertiary">
+                  <span class="text-content-primary text-p2">{{ compactNumber(monthlyEarnings, 4) }}</span> {{
+                    asset.symbol
+                  }}
+                  ≈ ${{ compactNumber(monthlyEarningsUsd) }}
+                </p>
+              </SummaryRow>
+
+              <SummaryRow label="Supply APY">
+                <SummaryValue
+                  :after="estimateSupplyAPYDisplay"
+                  suffix="%"
+                  estimate-only
+                />
+              </SummaryRow>
+            </VaultFormInfoBlock>
+
+            <template #buttons>
+              <VaultFormInfoButton
+                :earn-vault="vault"
+                class="laptop:!hidden"
+                :disabled="isLoading || isSubmitting"
+              />
+              <VaultFormSubmit
+                :disabled="reviewSupplyDisabled"
+                :loading="isSubmitting || isPreparing"
+              >
+                Review Supply
+              </VaultFormSubmit>
+            </template>
+          </VaultForm>
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>

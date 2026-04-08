@@ -1,15 +1,17 @@
 import type { VaultCollateralLTV } from './types'
 
 /** Shared LTV ramp config fields used by both VaultCollateralLTV and BorrowVaultPair */
-type LTVRampConfig = Pick<VaultCollateralLTV, 'liquidationLTV' | 'initialLiquidationLTV' | 'targetTimestamp' | 'rampDuration'>
+export type LTVRampConfig = Pick<VaultCollateralLTV, 'liquidationLTV' | 'initialLiquidationLTV' | 'targetTimestamp' | 'rampDuration'>
 
 /**
  * Calculate the current liquidation LTV, taking into account ramping.
  * When liquidation LTV is lowered, it ramps down linearly from initialLiquidationLTV
  * to liquidationLTV (target) over rampDuration, reaching target at targetTimestamp.
+ *
+ * @param nowSeconds - Optional override for current time (seconds since epoch). Defaults to Date.now().
  */
-export const getCurrentLiquidationLTV = (ltv: LTVRampConfig): bigint => {
-  const now = BigInt(Math.floor(Date.now() / 1000))
+export const getCurrentLiquidationLTV = (ltv: LTVRampConfig, nowSeconds?: bigint): bigint => {
+  const now = nowSeconds ?? BigInt(Math.floor(Date.now() / 1000))
 
   // If ramping is complete or LTV is ramping UP (not down), return target
   if (now >= ltv.targetTimestamp || ltv.liquidationLTV >= ltv.initialLiquidationLTV) {
@@ -21,14 +23,17 @@ export const getCurrentLiquidationLTV = (ltv: LTVRampConfig): bigint => {
   const currentLTV = ltv.liquidationLTV
     + ((ltv.initialLiquidationLTV - ltv.liquidationLTV) * timeRemaining) / ltv.rampDuration
 
-  return currentLTV
+  // Cap at initialLiquidationLTV to prevent overshoot before ramp period starts
+  return currentLTV > ltv.initialLiquidationLTV ? ltv.initialLiquidationLTV : currentLTV
 }
 
 /**
  * Check if the liquidation LTV is currently ramping down
+ *
+ * @param nowSeconds - Optional override for current time (seconds since epoch). Defaults to Date.now().
  */
-export const isLiquidationLTVRamping = (ltv: LTVRampConfig): boolean => {
-  const now = BigInt(Math.floor(Date.now() / 1000))
+export const isLiquidationLTVRamping = (ltv: LTVRampConfig, nowSeconds?: bigint): boolean => {
+  const now = nowSeconds ?? BigInt(Math.floor(Date.now() / 1000))
 
   // Ramping down if: not yet at target timestamp AND target is less than initial (ramping DOWN)
   return now < ltv.targetTimestamp && ltv.liquidationLTV < ltv.initialLiquidationLTV
@@ -36,9 +41,11 @@ export const isLiquidationLTVRamping = (ltv: LTVRampConfig): boolean => {
 
 /**
  * Get the time remaining until ramping completes (in seconds)
+ *
+ * @param nowSeconds - Optional override for current time (seconds since epoch). Defaults to Date.now().
  */
-export const getRampTimeRemaining = (ltv: LTVRampConfig): bigint => {
-  const now = BigInt(Math.floor(Date.now() / 1000))
+export const getRampTimeRemaining = (ltv: LTVRampConfig, nowSeconds?: bigint): bigint => {
+  const now = nowSeconds ?? BigInt(Math.floor(Date.now() / 1000))
   if (now >= ltv.targetTimestamp) {
     return 0n
   }

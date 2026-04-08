@@ -42,6 +42,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing required parameters: chainId, tokenIn, tokenOut, amountIn' })
   }
 
+  const fromAddr = params.get('fromAddress')
+  const receiver = params.get('receiver')
+  if (!fromAddr || !receiver || !/^0x[0-9a-fA-F]{40}$/.test(fromAddr) || !/^0x[0-9a-fA-F]{40}$/.test(receiver)) {
+    throw createError({ statusCode: 400, statusMessage: 'Invalid or missing fromAddress / receiver' })
+  }
+
   const url = `${apiUrl}/api/v1/shortcuts/route?${params.toString()}`
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)

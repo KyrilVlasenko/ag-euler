@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { getAssetLogoUrl } from '~/composables/useTokens'
+import { getAssetLogoUrl } from '~/composables/useTokenList'
 
-const { asset, size, iconUrl } = defineProps<{
+const { asset, size, iconUrl, increasedSpacing = false } = defineProps<{
   asset: { address: string, symbol: string } | { address: string, symbol: string }[]
   size?: '16' | '20' | '36' | '38' | '40' | '46'
   iconUrl?: string
+  increasedSpacing?: boolean
 }>()
 
 const sizeClass = computed(() => size ? `icon--${size}` : undefined)
@@ -28,5 +29,6 @@ const label = computed(() => {
     :src="src"
     :label="label"
     :class="sizeClass"
+    :increased-spacing="increasedSpacing"
   />
 </template>

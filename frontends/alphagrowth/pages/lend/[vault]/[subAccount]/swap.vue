@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useAccount } from '@wagmi/vue'
 import { isAddress, getAddress, zeroAddress, type Address } from 'viem'
-import { type Vault, type SecuritizeVault, isSecuritizeVault, fetchSecuritizeVault } from '~/entities/vault'
+import { type Vault, type SecuritizeVault, fetchSecuritizeVault } from '~/entities/vault'
+import { isSecuritizeVault } from '~/entities/vault/factory'
 import { getSubAccountAddress } from '~/entities/account'
 import { useSwapCollateralOptions } from '~/composables/useSwapCollateralOptions'
 import { SwapperMode } from '~/entities/swap'
@@ -11,6 +12,7 @@ import { formatNumber, formatSmartAmount } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
 import { useSwapPageLogic } from '~/composables/useSwapPageLogic'
 import { normalizeAddress } from '~/utils/normalizeAddress'
+import { isVaultDeprecated } from '~/utils/eulerLabelsUtils'
 
 const route = useRoute()
 const { getVault } = useVaults()
@@ -29,10 +31,18 @@ const subAccount = computed(() => {
 // ── Vaults ───────────────────────────────────────────────────────────────
 const fromVault: Ref<Vault | SecuritizeVault | undefined> = ref()
 const toVault: Ref<Vault | undefined> = ref()
+useOperationGuard(computed(() => [fromVault.value?.address, toVault.value?.address].filter(Boolean)))
 
-const isFromSecuritizeVault = computed(() => fromVault.value && 'type' in fromVault.value && fromVault.value.type === 'securitize')
 const fromVaultAsRegular = computed(() => fromVault.value as Vault | undefined)
 const { collateralOptions, collateralVaults } = useSwapCollateralOptions({ currentVault: fromVaultAsRegular })
+const toVaultOptions = computed(() => collateralVaults.value.filter(vault => !isVaultDeprecated(vault.address)))
+const toVaultOptionAddresses = computed(() => new Set(toVaultOptions.value.map(vault => normalizeAddress(vault.address))))
+const toCollateralOptions = computed(() => {
+  return collateralOptions.value.filter((option) => {
+    if (!option.vaultAddress) return false
+    return toVaultOptionAddresses.value.has(normalizeAddress(option.vaultAddress))
+  })
+})
 
 const getVaultAddress = () => route.params.vault as string
 
@@ -68,7 +78,7 @@ const swap = useSwapPageLogic({
   fromVault,
   toVault,
   balance,
-  vaultOptions: collateralVaults,
+  vaultOptions: toVaultOptions,
   displayAmountField: 'amountOut',
   quoteDiffPrefix: '-',
   redirectPath: '/portfolio/saving',
@@ -168,7 +178,8 @@ const loadVaults = async () => {
   }
 }
 
-await loadVaults()
+// Non-blocking to avoid Suspense + pageTransition crash on direct navigation
+loadVaults()
 
 watch([() => route.params.vault, () => route.query.to], () => {
   loadVaults()
@@ -178,7 +189,8 @@ watch([() => route.params.vault, () => route.query.to], () => {
 <template>
   <div class="flex gap-32">
     <VaultForm
-      title="Asset swap"
+      title="Rebalance savings"
+      description="Move your supplied assets from one vault to another."
       class="flex flex-col gap-16 w-full"
       :loading="isLoading"
       @submit.prevent="submit"
@@ -196,7 +208,7 @@ watch([() => route.params.vault, () => route.query.to], () => {
               :desc="fromProduct.name"
               label="From"
               :asset="fromVault.asset"
-              :vault="isFromSecuritizeVault ? undefined : (fromVault as Vault)"
+              :vault="fromVault"
               :balance="balance"
               maxable
               @input="onFromInput"
@@ -220,14 +232,14 @@ watch([() => route.params.vault, () => route.query.to], () => {
               label="To"
               :asset="toVault.asset"
               :vault="toVault"
-              :collateral-options="collateralOptions"
+              :collateral-options="toCollateralOptions"
               collateral-modal-title="Select vault"
               :readonly="true"
               @change-collateral="onToVaultChange"
             />
             <div
               v-else
-              class="bg-euler-dark-400 rounded-16 p-16 text-euler-dark-900"
+              class="bg-card rounded-16 p-16 text-content-primary"
             >
               No asset swap options available
             </div>
@@ -294,43 +306,14 @@ watch([() => route.params.vault, () => route.query.to], () => {
                   {{ currentPrice ? `${formatSmartAmount(currentPrice.value)} ${currentPrice.symbol}` : '-' }}
                 </p>
               </SummaryRow>
-              <SummaryRow
-                label="Swap"
-                align-top
-              >
-                <p class="text-p2 text-right flex flex-col items-end">
-                  <span>{{ swapSummary ? swapSummary.from : '-' }}</span>
-                  <span
-                    v-if="swapSummary"
-                    class="text-content-tertiary text-p3"
-                  >
-                    {{ swapSummary.to }}
-                  </span>
-                </p>
-              </SummaryRow>
-              <SummaryRow label="Price impact">
-                <p class="text-p2">
-                  {{ priceImpact !== null ? `${formatNumber(priceImpact, 2, 2)}%` : '-' }}
-                </p>
-              </SummaryRow>
-              <SummaryRow label="Slippage tolerance">
-                <button
-                  type="button"
-                  class="flex items-center gap-6 text-p2"
-                  @click="openSlippageSettings"
-                >
-                  <span>{{ formatNumber(slippage, 2, 0) }}%</span>
-                  <SvgIcon
-                    name="edit"
-                    class="!w-16 !h-16 text-accent-600"
-                  />
-                </button>
-              </SummaryRow>
-              <SummaryRow label="Routed via">
-                <p class="text-p2 text-right">
-                  {{ routedVia || '-' }}
-                </p>
-              </SummaryRow>
+              <SwapDetailsSummary
+                :input-display="swapSummary?.from ?? null"
+                :output-display="swapSummary?.to ?? null"
+                :price-impact="priceImpact"
+                :slippage="slippage"
+                :routed-via="routedVia"
+                @open-slippage-settings="openSlippageSettings"
+              />
             </template>
             <SummaryRow
               v-else

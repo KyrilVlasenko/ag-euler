@@ -5,6 +5,13 @@ import { swapVerifierAbi } from '~/entities/euler/abis'
 import { INTEREST_ADJUSTMENT_BPS, BPS_BASE } from '~/entities/tuning-constants'
 import { vaultPreviewDepositAbi } from '~/abis/vault'
 
+export class EnsoRouteNotFoundError extends Error {
+  constructor(message = 'Could not find a route for this amount. Please adjust the amount to try again.') {
+    super(message)
+    this.name = 'EnsoRouteNotFoundError'
+  }
+}
+
 const erc20DecimalsAbi = [{
   type: 'function' as const,
   name: 'decimals',
@@ -64,10 +71,10 @@ const repayFunctionAbi = [{
 }]
 
 export interface EnsoRouteResponse {
-  tx: { to: Address; from: Address; data: Hex; value: string }
+  tx: { to: Address, from: Address, data: Hex, value: string }
   amountOut: string
   minAmountOut: string
-  route: Array<{ action: string; protocol: string }>
+  route: Array<{ action: string, protocol: string }>
   gas?: string
 }
 
@@ -172,6 +179,9 @@ export function encodeAdapterZapIn(tokenIndex: number, amount: bigint, minBptOut
 }
 
 export const useEnsoRoute = () => {
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 1000
+
   const getEnsoRoute = async (params: {
     chainId: number
     fromAddress: Address
@@ -181,6 +191,9 @@ export const useEnsoRoute = () => {
     receiver: Address
     slippage: number
   }): Promise<EnsoRouteResponse> => {
+    if (!params.fromAddress || !params.receiver) {
+      throw new Error('getEnsoRoute: fromAddress and receiver are required')
+    }
     const query = new URLSearchParams({
       chainId: String(params.chainId),
       fromAddress: params.fromAddress,
@@ -192,16 +205,48 @@ export const useEnsoRoute = () => {
       routingStrategy: 'router',
     })
 
-    const response = await $fetch<string>(`/api/enso/route?${query.toString()}`, {
-      method: 'GET',
-      responseType: 'text',
-    })
+    let lastError: Error | undefined
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const raw = await $fetch.raw<string>(`/api/enso/route?${query.toString()}`, {
+        method: 'GET',
+        responseType: 'text',
+        ignoreResponseError: true,
+      })
+      const response = raw._data ?? ''
+      const status = raw.status
 
-    const data = JSON.parse(response)
-    if (!data.tx) {
-      throw new Error(data.message || 'Enso route failed')
+      if (status === 422) {
+        lastError = new EnsoRouteNotFoundError()
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS))
+          continue
+        }
+        throw lastError
+      }
+
+      let data: any
+      try {
+        data = JSON.parse(response)
+      }
+      catch {
+        lastError = new Error('Enso route failed')
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS))
+          continue
+        }
+        throw lastError
+      }
+      if (!data.tx) {
+        lastError = new EnsoRouteNotFoundError()
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS))
+          continue
+        }
+        throw lastError
+      }
+      return data as EnsoRouteResponse
     }
-    return data as EnsoRouteResponse
+    throw lastError!
   }
 
   const buildEnsoSwapQuote = (

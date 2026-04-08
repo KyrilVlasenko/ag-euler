@@ -2,6 +2,7 @@
 import type { EarnVault } from '~/entities/vault'
 import { formatTtl } from '~/utils/crypto-utils'
 import { getExplorerLink } from '~/utils/block-explorer'
+import { getSpecialAddressLabel } from '~/utils/special-addresses'
 
 const { vault } = defineProps<{ vault: EarnVault }>()
 const { chainId } = useEulerAddresses()
@@ -60,7 +61,7 @@ const getExplorerAddressLink = (address: string) => getExplorerLink(address, cha
             class="text-accent-600 underline cursor-pointer hover:text-accent-500"
             target="_blank"
           >
-            {{ shortenAddress(infoItem.address) }}
+            {{ getSpecialAddressLabel(infoItem.address) || shortenAddress(infoItem.address) }}
           </NuxtLink>
           <button
             class="text-neutral-400 cursor-pointer outline-none hover:text-neutral-600 active:text-neutral-700"
@@ -75,9 +76,10 @@ const getExplorerAddressLink = (address: string) => getExplorerLink(address, cha
       </VaultOverviewLabelValue>
       <VaultOverviewLabelValue
         label="Timelock"
-        :value="timelockDisplay"
         orientation="horizontal"
-      />
+      >
+        <span class="pr-[22px]">{{ timelockDisplay }}</span>
+      </VaultOverviewLabelValue>
     </div>
   </div>
 </template>

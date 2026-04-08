@@ -4,13 +4,14 @@ import type { CollateralOption } from '~/entities/vault'
 import { formatNumber } from '~/utils/string-utils'
 
 const emits = defineEmits(['close'])
-const { productName, symbol, collateralOptions, selected = 0, title = 'Select collateral', onSave } = defineProps<{
+const { productName, symbol, collateralOptions, selected = 0, title = 'Select collateral', apyLabel = 'Supply APY', onSave } = defineProps<{
   productName: string
   symbol: string
   collateralOptions: CollateralOption[]
   selected?: number
   title?: string
-  onSave: any
+  apyLabel?: string
+  onSave: (selectedIndex: number) => void
 }>()
 
 const { isEscrowVault } = useVaultRegistry()
@@ -112,9 +113,12 @@ const handleClose = () => {
             </span>
           </div>
         </div>
-        <div class="text-right grow-1">
+        <div
+          v-if="getOptionType(option) !== 'wallet'"
+          class="text-right grow-1"
+        >
           <div class="text-euler-dark-900 mb-2">
-            APY
+            {{ apyLabel }}
           </div>
           <div class="text-h5">
             {{ option.apy !== undefined ? `${formatNumber(option.apy)}%` : '-' }}

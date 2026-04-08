@@ -2,14 +2,16 @@
 import { DateTime } from 'luxon'
 import { formatNumber } from '~/utils/string-utils'
 import type { RewardCampaign } from '~/entities/reward-campaign'
+import { PROVIDER_LABELS, PROVIDER_LOGOS } from '~/entities/reward-campaign'
 import type { IntrinsicApyInfo } from '~/entities/intrinsic-apy'
 
 const emits = defineEmits(['close'])
-const { lendingAPY, intrinsicAPY, intrinsicApyInfo, campaigns } = defineProps<{
+const { lendingAPY, intrinsicAPY, intrinsicApyInfo, campaigns, baseApyAverageLabel } = defineProps<{
   lendingAPY: number
   intrinsicAPY?: number
   intrinsicApyInfo?: IntrinsicApyInfo
   campaigns?: RewardCampaign[]
+  baseApyAverageLabel?: string
 }>()
 
 const rewardsTotalAPY = computed(() => {
@@ -25,13 +27,14 @@ const totalSupplyApy = computed(() => lendingAPY + intrinsicApyValue.value + (re
 const rewardsInfo = computed(() => {
   if (!campaigns) return []
   return campaigns
-    .filter(c => c.endTimestamp > Math.floor(Date.now() / 1000))
+    .filter(c => c.endTimestamp > Math.floor(Date.now() / 1000) || c.endTimestamp === 0)
     .map(c => ({
       id: `${c.vault}-${c.provider}-${c.endTimestamp}`,
       apr: c.apr,
-      endDate: DateTime.fromSeconds(c.endTimestamp),
+      endDate: c.endTimestamp > 0 ? DateTime.fromSeconds(c.endTimestamp) : null,
       rewardToken: c.rewardToken || { symbol: 'Unknown', icon: '' },
       source: c.provider,
+      sourceUrl: c.sourceUrl,
     }))
     .sort((a, b) => a.rewardToken.symbol.localeCompare(b.rewardToken.symbol))
 })
@@ -48,14 +51,20 @@ const handleClose = () => {
   >
     <div class="mb-24">
       <div
-        class="pb-16 mb-16 border-b border-euler-dark-600"
+        class="pb-16 mb-16 border-b border-line-default"
       >
         <div class="flex justify-between items-center">
           <div>
-            <p class="mb-4">
+            <p class="mb-4 flex items-center gap-6">
               Lending APY
+              <span
+                v-if="baseApyAverageLabel"
+                class="inline-flex items-center rounded-8 px-8 py-2 bg-accent-100 text-accent-600 text-p5"
+              >
+                {{ baseApyAverageLabel }}
+              </span>
             </p>
-            <p class="text-euler-dark-900">
+            <p class="text-content-primary">
               Yield from lending on Euler
             </p>
           </div>
@@ -71,7 +80,7 @@ const handleClose = () => {
             <p class="mb-4">
               Intrinsic APY{{ intrinsicApyInfo?.provider ? ` (${intrinsicApyInfo.provider})` : '' }}
             </p>
-            <p class="text-euler-dark-900">
+            <p class="text-content-primary">
               Yield intrinsic to the supplied asset, such as staking yield or external rewards, might be compounded with lending yield
             </p>
             <a
@@ -79,7 +88,7 @@ const handleClose = () => {
               :href="intrinsicApyInfo.source"
               target="_blank"
               rel="noopener noreferrer"
-              class="text-sm text-euler-dark-900 underline mt-4 inline-block"
+              class="text-sm text-content-primary underline mt-4 inline-block"
             >
               Source
             </a>
@@ -96,12 +105,12 @@ const handleClose = () => {
         <div>
           <p class="mb-4 flex gap-4">
             <SvgIcon
-              class="!w-20 !h-20 text-aquamarine-700"
+              class="!w-20 !h-20 text-accent-500"
               name="sparks"
             />
             <span>Rewards APY</span>
           </p>
-          <p class="text-euler-dark-900">
+          <p class="text-content-primary">
             Yield from token rewards
           </p>
         </div>
@@ -122,10 +131,29 @@ const handleClose = () => {
             alt="Reward token logo"
           >
           <p class="ml-12">
-            {{ reward.rewardToken.symbol === 'WTAC' ? 'TAC' : reward.rewardToken.symbol }}
+            {{ reward.rewardToken.symbol }}
           </p>
-          <p class="ml-4 text-euler-dark-900">
-            ({{ reward.source === 'brevis' ? 'Brevis, ' : '' }}ends {{ reward.endDate.toFormat('MMMM dd, yyyy') }})
+          <p class="ml-4 text-content-primary">
+            (<a
+              v-if="reward.sourceUrl"
+              :href="reward.sourceUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline"
+              @click.stop
+            ><img
+              v-if="PROVIDER_LOGOS[reward.source]"
+              :src="PROVIDER_LOGOS[reward.source]"
+              class="w-14 h-14 inline-block align-middle mr-2"
+              :alt="PROVIDER_LABELS[reward.source]"
+            >{{ PROVIDER_LABELS[reward.source] || reward.source }}</a><template v-else>
+              <img
+                v-if="PROVIDER_LOGOS[reward.source]"
+                :src="PROVIDER_LOGOS[reward.source]"
+                class="w-14 h-14 inline-block align-middle mr-2"
+                :alt="PROVIDER_LABELS[reward.source]"
+              >{{ PROVIDER_LABELS[reward.source] || reward.source }}
+            </template>{{ reward.endDate ? `, ends ${reward.endDate.toFormat('MMMM dd, yyyy')}` : '' }})
           </p>
         </div>
         <div class="text-p2">
@@ -133,7 +161,7 @@ const handleClose = () => {
         </div>
       </div>
     </div>
-    <div class="bg-euler-dark-600 rounded-12 p-16 flex justify-between items-center">
+    <div class="bg-surface-secondary rounded-12 p-16 flex justify-between items-center">
       <p>Total supply APY</p>
       <p class="text-h4">
         {{ formatNumber(totalSupplyApy) }}%

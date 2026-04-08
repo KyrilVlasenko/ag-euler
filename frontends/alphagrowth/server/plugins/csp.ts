@@ -30,14 +30,66 @@ function parseExtraConnectSrc(): string[] {
   return raw.split(',').map(s => s.trim()).filter(Boolean)
 }
 
+/** Extract the origin (scheme + host + port) from a URL string. */
+function safeOrigin(raw: string | undefined): string | null {
+  const trimmed = raw?.trim()
+  if (!trimmed) return null
+  try {
+    return new URL(trimmed).origin
+  }
+  catch {
+    return null
+  }
+}
+
+/** Read an env var with fallback names (mirrors app-config.ts resolution order). */
+function env(...keys: string[]): string | undefined {
+  for (const k of keys) {
+    if (process.env[k]) return process.env[k]
+  }
+  return undefined
+}
+
+/** Scan process.env for dynamic RPC / subgraph URL env vars. */
+function scanDynamicEnvUrls(): string[] {
+  const urls: string[] = []
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!value) continue
+    // RPC_URL_HTTP_<chainId> — wagmi uses these directly on the client
+    // NUXT_PUBLIC_SUBGRAPH_URI_<chainId> — client-side GraphQL queries
+    if (/^RPC_URL_HTTP_\d+$/.test(key) || /^NUXT_PUBLIC_SUBGRAPH_URI_\d+$/.test(key)) {
+      urls.push(value)
+    }
+  }
+  return urls
+}
+
+/** Derive CSP origins from URL env vars so deployers don't need to duplicate them. */
+function parseEnvOrigins(): { connect: string[], img: string[] } {
+  // Labels, oracle checks, token lists, and euler-chains are proxied through
+  // server /api/* endpoints, so their origins are not needed in connect-src.
+  const connectVars = [
+    env('EULER_API_URL', 'NUXT_PUBLIC_EULER_API_URL'),
+    env('SWAP_API_URL', 'NUXT_PUBLIC_SWAP_API_URL'),
+    env('PRICE_API_URL', 'NUXT_PUBLIC_PRICE_API_URL'),
+    // Pyth Hermes is proxied through /api/pyth/updates — no external origin needed
+    // Dynamic per-chain URLs (RPC for wagmi, subgraph for GraphQL)
+    ...scanDynamicEnvUrls(),
+  ]
+  const imgVars = [
+    process.env.NUXT_PUBLIC_CONFIG_LABELS_BASE_URL,
+    env('LOGO_URL', 'NUXT_PUBLIC_CONFIG_LOGO_URL'),
+  ]
+
+  const connect = [...new Set(connectVars.map(safeOrigin).filter(Boolean))] as string[]
+  const img = [...new Set(imgVars.map(safeOrigin).filter(Boolean))] as string[]
+  return { connect, img }
+}
+
 const CONNECT_SRC_BASE = [
   '\'self\'',
-  'https://indexer.euler.finance',
-  'https://swap.euler.finance',
   'https://api.merkl.xyz',
   'https://incentra-prd.brevis.network',
-  'https://hermes.pyth.network',
-  'https://raw.githubusercontent.com',
   // WalletConnect / Reown
   'https://rpc.walletconnect.com',
   'https://rpc.walletconnect.org',
@@ -62,8 +114,7 @@ const CONNECT_SRC_BASE = [
   'https://chain-proxy.wallet.coinbase.com',
   'https://cca-lite.coinbase.com',
   // External data APIs
-  'https://yields.llama.fi',
-  'https://api-v2.pendle.finance',
+  'https://api.fuul.xyz',
   // Reown AppKit SDK version check
   'https://registry.npmjs.org',
   // RPC providers (wildcard — operators configure per chain)
@@ -80,12 +131,15 @@ const CONNECT_SRC_BASE = [
   'wss://relay.walletconnect.org',
 ]
 
-function buildCsp(nonce: string, extraConnectSrc: string[]): string {
+function buildCsp(nonce: string, extraConnectSrc: string[], envOrigins: { connect: string[], img: string[] }): string {
   const connectSrc = [
     ...CONNECT_SRC_BASE,
     ...(isDev ? CONNECT_SRC_DEV : []),
     ...extraConnectSrc,
+    ...envOrigins.connect,
   ]
+
+  const imgSuffix = envOrigins.img.map(o => ` ${o}`).join('')
 
   const directives = [
     'default-src \'self\'',
@@ -97,7 +151,7 @@ function buildCsp(nonce: string, extraConnectSrc: string[]): string {
     'font-src \'self\' https://fonts.reown.com',
     'frame-src \'self\' https://verify.walletconnect.org https://verify.walletconnect.com',
     'frame-ancestors \'none\'',
-    'img-src \'self\' data: blob: https://raw.githubusercontent.com https://storage.googleapis.com https://token-images.euler.finance',
+    `img-src 'self' data: blob: https://raw.githubusercontent.com https://storage.googleapis.com https://token-images.euler.finance https://assets.coingecko.com https://token-icons.llamao.fi https://tokens.1inch.io${imgSuffix}`,
     'manifest-src \'self\'',
     'media-src \'self\'',
     'worker-src \'self\' blob:',
@@ -122,6 +176,7 @@ function stripCspMeta(chunks: string[]): string[] {
 
 export default defineNitroPlugin((nitroApp) => {
   const extraConnectSrc = parseExtraConnectSrc()
+  const envOrigins = parseEnvOrigins()
 
   nitroApp.hooks.hook('render:html', (html, { event }) => {
     const nonce = randomBytes(16).toString('base64')
@@ -135,6 +190,6 @@ export default defineNitroPlugin((nitroApp) => {
     html.bodyPrepend = injectNonce(html.bodyPrepend, nonce)
     html.bodyAppend = injectNonce(html.bodyAppend, nonce)
 
-    setResponseHeader(event, 'Content-Security-Policy', buildCsp(nonce, extraConnectSrc))
+    setResponseHeader(event, 'Content-Security-Policy', buildCsp(nonce, extraConnectSrc, envOrigins))
   })
 })

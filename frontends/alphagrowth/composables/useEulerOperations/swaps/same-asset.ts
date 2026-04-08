@@ -47,8 +47,6 @@ export const createSameAssetSwapBuilders = (
     const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
     const accountAddr = subAccount ? (subAccount as Address) : userAddr
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     if (isMax) {
       hooks.addContractInterface(fromVaultAddr, vaultRedeemAbi)
@@ -65,7 +63,6 @@ export const createSameAssetSwapBuilders = (
     if (evcAbis.length) {
       hooks.addContractInterface(evcAddress, evcAbis)
     }
-    tos.addTosInterface(hooks)
 
     const evcCalls: EVCCall[] = []
 
@@ -80,8 +77,6 @@ export const createSameAssetSwapBuilders = (
         userAddr,
       })
     }
-
-    tos.injectTosCall(evcCalls, hooks)
 
     // Withdraw from old vault (sends underlying to new vault address)
     if (isMax && maxShares !== undefined) {
@@ -163,12 +158,9 @@ export const createSameAssetSwapBuilders = (
     const userAddr = ctx.address.value as Address
     const subAccountAddr = subAccount as Address
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(collateralVaultAddr, vaultWithdrawAbi)
     hooks.addContractInterface(borrowVaultAddr, [...vaultSkimAbi, ...vaultRepayWithSharesAbi])
-    tos.addTosInterface(hooks)
 
     const evcCalls: EVCCall[] = []
 
@@ -179,8 +171,6 @@ export const createSameAssetSwapBuilders = (
       enabledCollaterals,
       userAddr,
     })
-
-    tos.injectTosCall(evcCalls, hooks)
 
     // Withdraw from collateral vault, send underlying to borrow vault
     evcCalls.push({
@@ -235,8 +225,6 @@ export const createSameAssetSwapBuilders = (
     const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
     const subAccountAddr = subAccount as Address
 
-    const tos = await helpers.prepareTos(userAddr)
-
     // Pre-flight: read pre-existing deposit in borrow vault
     let preExistingBorrowDeposit = 0n
     try {
@@ -264,13 +252,10 @@ export const createSameAssetSwapBuilders = (
     hooks.addContractInterface(collateralVaultAddr, [...vaultWithdrawAbi, ...vaultSkimAbi, ...vaultTransferFromMaxAbi])
     hooks.addContractInterface(borrowVaultAddr, [...vaultSkimAbi, ...vaultRepayWithSharesAbi, ...evcDisableControllerAbi, ...vaultRedeemAbi])
     hooks.addContractInterface(evcAddress, evcDisableCollateralAbi)
-    tos.addTosInterface(hooks)
 
     const evcCalls: EVCCall[] = []
 
     // No Pyth updates needed — batch ends with disableController (no health check)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     // 1. Withdraw from collateral vault (slightly more than debt for interest)
     const adjustedAmount = adjustForInterest(amount)
@@ -372,8 +357,6 @@ export const createSameAssetSwapBuilders = (
     const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
     const subAccountAddr = subAccount as Address
 
-    const tos = await helpers.prepareTos(userAddr)
-
     // Pre-flight: read pre-existing deposit in OLD vault
     let preExistingOldVaultDeposit = 0n
     try {
@@ -401,7 +384,6 @@ export const createSameAssetSwapBuilders = (
     hooks.addContractInterface(newVaultAddr, [...vaultBorrowAbi, ...vaultSkimAbi, ...vaultTransferFromMaxAbi])
     hooks.addContractInterface(oldVaultAddr, [...vaultSkimAbi, ...vaultRepayWithSharesAbi, ...evcDisableControllerAbi, ...vaultRedeemAbi])
     hooks.addContractInterface(evcAddress, evcEnableControllerAbi)
-    tos.addTosInterface(hooks)
 
     const evcCalls: EVCCall[] = []
 
@@ -412,8 +394,6 @@ export const createSameAssetSwapBuilders = (
       enabledCollaterals,
       userAddr,
     })
-
-    tos.injectTosCall(evcCalls, hooks)
 
     // 1. Enable new vault as controller
     evcCalls.push({

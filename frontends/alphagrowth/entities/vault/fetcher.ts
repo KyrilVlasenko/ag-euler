@@ -14,14 +14,12 @@ import type { PythFeed } from '~/entities/oracle'
 import { collectPythFeedIds } from '~/entities/oracle'
 import {
   eulerEarnVaultLensABI,
-  eulerPerspectiveABI,
   eulerUtilsLensABI,
   eulerVaultLensABI,
 } from '~/entities/euler/abis'
-import { executeLensWithPythSimulation } from '~/utils/pyth'
+import { executeLensWithPythSimulation, executeBatchLensWithPythSimulation } from '~/utils/pyth'
 import { valueToNano } from '~/utils/crypto-utils'
 import { batchLensCalls } from '~/utils/multicall'
-import { getPublicClient } from '~/utils/public-client'
 
 interface ProcessVaultOptions {
   verified?: boolean
@@ -34,6 +32,7 @@ interface ProcessVaultOptions {
  */
 
 export const processRawVaultData = (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw lens data with dynamic shape
   raw: any,
   vaultAddress: string,
   verifiedVaultAddresses?: string[],
@@ -134,7 +133,8 @@ const fetchVaultWithPythSimulation = async (
 }
 
 export const fetchVault = async (vaultAddress: string): Promise<Vault> => {
-  const { EVM_PROVIDER_URL, PYTH_HERMES_URL } = useEulerConfig()
+  const { PYTH_HERMES_URL } = useEulerConfig()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
   const { loadEulerConfig, isReady } = useEulerAddresses()
   const { verifiedVaultAddresses } = useEulerLabels()
 
@@ -144,21 +144,15 @@ export const fetchVault = async (vaultAddress: string): Promise<Vault> => {
   }
   const { eulerLensAddresses, eulerCoreAddresses } = useEulerAddresses()
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
+  const client = rpcClient.value!
 
   // Standard query first (fast path for non-Pyth vaults)
-  let raw: Record<string, unknown>
-  try {
-    raw = await client.readContract({
-      address: eulerLensAddresses.value!.vaultLens as Address,
-      abi: eulerVaultLensABI,
-      functionName: 'getVaultInfoFull',
-      args: [vaultAddress],
-    }) as Record<string, unknown>
-  }
-  catch {
-    return await fetchVaultErc4626Fallback(vaultAddress)
-  }
+  const raw = await client.readContract({
+    address: eulerLensAddresses.value!.vaultLens as Address,
+    abi: eulerVaultLensABI,
+    functionName: 'getVaultInfoFull',
+    args: [vaultAddress],
+  }) as Record<string, unknown>
   let vault = processRawVaultData(raw, vaultAddress, verifiedVaultAddresses.value)
 
   // Check if vault uses Pyth oracles
@@ -171,7 +165,7 @@ export const fetchVault = async (vaultAddress: string): Promise<Vault> => {
     const vaultWithFreshPrice = await fetchVaultWithPythSimulation(
       vaultAddress,
       feeds,
-      EVM_PROVIDER_URL,
+      rpcUrl.value,
       eulerLensAddresses.value!.vaultLens,
       eulerCoreAddresses.value.evc,
       PYTH_HERMES_URL,
@@ -184,8 +178,8 @@ export const fetchVault = async (vaultAddress: string): Promise<Vault> => {
 
   if (eulerLensAddresses.value?.utilsLens) {
     const [assetPriceInfo, unitOfAccountPriceInfo] = await Promise.all([
-      resolveAssetPriceInfo(EVM_PROVIDER_URL, eulerLensAddresses.value.utilsLens, vault.asset.address),
-      resolveUnitOfAccountPriceInfo(EVM_PROVIDER_URL, eulerLensAddresses.value.utilsLens, vault.unitOfAccount),
+      resolveAssetPriceInfo(rpcUrl.value, eulerLensAddresses.value.utilsLens, vault.asset.address),
+      resolveUnitOfAccountPriceInfo(rpcUrl.value, eulerLensAddresses.value.utilsLens, vault.unitOfAccount),
     ])
     vault = { ...vault, assetPriceInfo, unitOfAccountPriceInfo }
   }
@@ -194,7 +188,7 @@ export const fetchVault = async (vaultAddress: string): Promise<Vault> => {
 }
 
 export const fetchSecuritizeVault = async (vaultAddress: string): Promise<SecuritizeVault> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
   const { loadEulerConfig, isReady } = useEulerAddresses()
   const { verifiedVaultAddresses } = useEulerLabels()
 
@@ -204,7 +198,7 @@ export const fetchSecuritizeVault = async (vaultAddress: string): Promise<Securi
   }
   const { eulerLensAddresses } = useEulerAddresses()
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
+  const client = rpcClient.value!
 
   const data = await client.readContract({
     address: eulerLensAddresses.value!.utilsLens as Address,
@@ -256,6 +250,14 @@ export const fetchSecuritizeVault = async (vaultAddress: string): Promise<Securi
     // supplyCapResolved may not exist on all vaults
   }
 
+  const assetPriceInfo = eulerLensAddresses.value?.utilsLens
+    ? await resolveAssetPriceInfo(
+      rpcUrl.value,
+      eulerLensAddresses.value.utilsLens,
+      data.asset as string,
+    )
+    : undefined
+
   return {
     type: 'securitize',
     verified: verifiedVaultAddresses.value.includes(vaultAddress),
@@ -284,142 +286,23 @@ export const fetchSecuritizeVault = async (vaultAddress: string): Promise<Securi
       cash: data.totalAssets,
       supplyAPY: 0n,
     },
+    assetPriceInfo,
   } as SecuritizeVault
 }
 
-/**
- * Fallback fetcher for non-EVK ERC4626 vaults (e.g. Cork custom collateral vaults).
- * Uses the UtilsLens getVaultInfoERC4626 (which only reads standard ERC4626 methods)
- * and constructs a Vault with zeroed borrow-specific fields.
- */
-export const fetchVaultErc4626Fallback = async (vaultAddress: string): Promise<Vault> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+export const fetchEarnVault = async (vaultAddress: string): Promise<EarnVault> => {
+  const { client: rpcClient, rpcUrl } = useRpcClient()
+  const { earnVaults } = useEulerLabels()
   const { loadEulerConfig, isReady } = useEulerAddresses()
-  const { verifiedVaultAddresses } = useEulerLabels()
 
   if (!isReady.value) {
     loadEulerConfig()
     await until(computed(() => isReady.value)).toBeTruthy()
   }
-  const { eulerLensAddresses } = useEulerAddresses()
-
-  const client = getPublicClient(EVM_PROVIDER_URL)
-
-  const data = await client.readContract({
-    address: eulerLensAddresses.value!.utilsLens as Address,
-    abi: eulerUtilsLensABI,
-    functionName: 'getVaultInfoERC4626',
-    args: [vaultAddress as Address],
-  }) as Record<string, unknown>
-
-  const governorAdminAbi = [{
-    inputs: [],
-    name: 'governorAdmin',
-    outputs: [{ internalType: 'address', name: '', type: 'address' }],
-    stateMutability: 'view',
-    type: 'function',
-  }] as const
-
-  const supplyCapResolvedAbi = [{
-    inputs: [],
-    name: 'supplyCapResolved',
-    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  }] as const
-
-  let governorAdmin: string = zeroAddress
-  let supplyCap = 0n
-  try {
-    governorAdmin = await client.readContract({
-      address: vaultAddress as Address,
-      abi: governorAdminAbi,
-      functionName: 'governorAdmin',
-    }) as string
-  }
-  catch {
-    // governorAdmin may not exist on all ERC4626 vaults
-  }
-  try {
-    supplyCap = await client.readContract({
-      address: vaultAddress as Address,
-      abi: supplyCapResolvedAbi,
-      functionName: 'supplyCapResolved',
-    }) as bigint
-  }
-  catch {
-    // supplyCapResolved may not exist on all ERC4626 vaults
-  }
-
-  const totalAssets = data.totalAssets as bigint
-
-  return {
-    verified: verifiedVaultAddresses.value.includes(vaultAddress),
-    vaultCategory: 'collateral',
-    address: data.vault,
-    name: data.vaultName,
-    symbol: data.vaultSymbol,
-    decimals: data.vaultDecimals,
-    totalShares: data.totalShares,
-    totalAssets,
-    totalCash: totalAssets,
-    supply: totalAssets,
-    borrow: 0n,
-    supplyCap,
-    borrowCap: 0n,
-    interestFee: 0n,
-    configFlags: 0n,
-    maxLiquidationDiscount: 0n,
-    oracle: zeroAddress,
-    dToken: zeroAddress,
-    governorAdmin,
-    governorFeeReceiver: zeroAddress,
-    unitOfAccount: zeroAddress,
-    interestRateModelAddress: zeroAddress,
-    hookTarget: zeroAddress,
-    collateralLTVs: [],
-    collateralPrices: [],
-    liabilityPriceInfo: {
-      amountIn: 0n,
-      amountOutAsk: 0n,
-      amountOutBid: 0n,
-      amountOutMid: 0n,
-    },
-    interestRateInfo: {
-      borrowAPY: 0n,
-      borrowSPY: 0n,
-      borrows: 0n,
-      cash: totalAssets,
-      supplyAPY: 0n,
-    },
-    asset: {
-      address: data.asset,
-      name: data.assetName,
-      symbol: data.assetSymbol,
-      decimals: data.assetDecimals,
-    },
-  } as Vault
-}
-
-export const fetchEarnVault = async (vaultAddress: string): Promise<EarnVault> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
-  const { earnVaults } = useEulerLabels()
-  const { loadEulerConfig, isReady, eulerPeripheryAddresses } = useEulerAddresses()
-
-  if (!isReady.value) {
-    loadEulerConfig()
-    await until(computed(() => isReady.value && eulerPeripheryAddresses.value?.eulerEarnGovernedPerspective)).toBeTruthy()
-  }
 
   const { eulerLensAddresses } = useEulerAddresses()
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
-
-  const verifiedEarnVaults = await client.readContract({
-    address: eulerPeripheryAddresses.value!.eulerEarnGovernedPerspective as Address,
-    abi: eulerPerspectiveABI,
-    functionName: 'verifiedArray',
-  }) as string[]
+  const client = rpcClient.value!
 
   const data = await client.readContract({
     address: eulerLensAddresses.value!.eulerEarnVaultLens as Address,
@@ -443,18 +326,16 @@ export const fetchEarnVault = async (vaultAddress: string): Promise<EarnVault> =
 
   const supplyAPYNumber = await calculateEarnVaultAPYFromExchangeRate(
     vaultAddress,
-    EVM_PROVIDER_URL,
     data.vaultDecimals as bigint,
   )
 
   const assetPriceInfo = await resolveAssetPriceInfo(
-    EVM_PROVIDER_URL,
+    rpcUrl.value,
     eulerLensAddresses.value!.utilsLens,
     data.asset as string,
   )
 
-  const { isCustomLabelsRepo } = useDeployConfig()
-  const verified = isCustomLabelsRepo.value ? earnVaults.value.includes(vaultAddress) : verifiedEarnVaults.includes(vaultAddress)
+  const verified = earnVaults.value.includes(vaultAddress)
 
   return {
     verified,
@@ -506,7 +387,8 @@ export const fetchVaults = async function* (
     void,
     unknown
   > {
-  const { EVM_PROVIDER_URL, PYTH_HERMES_URL } = useEulerConfig()
+  const { PYTH_HERMES_URL } = useEulerConfig()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
   const { eulerLensAddresses, eulerCoreAddresses, chainId } = useEulerAddresses()
   const { verifiedVaultAddresses } = useEulerLabels()
 
@@ -520,7 +402,7 @@ export const fetchVaults = async function* (
     throw new Error('Euler addresses not loaded yet')
   }
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
+  const client = rpcClient.value!
 
   // Use provided addresses if available, otherwise fall back to verifiedVaultAddresses
   // (pre-categorization by caller is preferred to eliminate per-vault RPC calls)
@@ -532,9 +414,12 @@ export const fetchVaults = async function* (
   const parallelRounds = Math.ceil(batchCount / parallelBatches)
 
   // Helper to process raw vault data into Vault object (delegates to shared function)
+  // Uses verifiedVaultAddresses to correctly set the `verified` flag — avoids
+  // marking dynamically-resolved vaults (e.g. from user positions) as verified
+  // when they get swept into refreshVaults().
   const processVaultResult = (raw: Record<string, unknown>, vaultAddress: string): Vault | undefined => {
     try {
-      return processRawVaultData(raw, vaultAddress, undefined, { verified: true })
+      return processRawVaultData(raw, vaultAddress, verifiedVaultAddresses.value)
     }
     catch (e) {
       logWarn('vault/processResult', e, { severity: 'error' })
@@ -553,14 +438,9 @@ export const fetchVaults = async function* (
       }) as Record<string, unknown>
       return processVaultResult(raw, vaultAddress)
     }
-    catch {
-      try {
-        return await fetchVaultErc4626Fallback(vaultAddress)
-      }
-      catch (fallbackErr) {
-        logWarn('vault/fetchIndividual', fallbackErr, { severity: 'error' })
-        return undefined
-      }
+    catch (e) {
+      logWarn('vault/fetchIndividual', e, { severity: 'error' })
+      return undefined
     }
   }
 
@@ -578,7 +458,7 @@ export const fetchVaults = async function* (
         eulerLensAddresses.value!.vaultLens,
         eulerVaultLensABI,
         calls,
-        EVM_PROVIDER_URL,
+        rpcUrl.value,
       )
 
       const vaults: Vault[] = []
@@ -649,33 +529,37 @@ export const fetchVaults = async function* (
     // Re-fetch Pyth-powered vaults with simulation to get fresh prices
     // Pyth prices are only valid for ~2 minutes after on-chain update
     if (eulerCoreAddresses.value?.evc && PYTH_HERMES_URL) {
-      const pythVaultsToRefresh = validVaults.filter((vault) => {
-        const feeds = collectPythFeedIds(vault.oracleDetailedInfo)
-        return feeds.length > 0
-      })
+      const pythVaultEntries = validVaults
+        .map((vault) => {
+          const feeds = collectPythFeedIds(vault.oracleDetailedInfo)
+          return feeds.length > 0 ? { key: vault.address, feeds, args: [vault.address] } : null
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
-      if (pythVaultsToRefresh.length > 0) {
-        const refreshedVaults = await Promise.all(
-          pythVaultsToRefresh.map(async (vault) => {
-            const feeds = collectPythFeedIds(vault.oracleDetailedInfo)
-            const refreshed = await fetchVaultWithPythSimulation(
-              vault.address,
-              feeds,
-              EVM_PROVIDER_URL,
-              eulerLensAddresses.value!.vaultLens,
-              eulerCoreAddresses.value!.evc,
-              PYTH_HERMES_URL,
-              verifiedVaultAddresses.value,
-            )
-            return refreshed || vault // Fall back to original if simulation fails
-          }),
+      if (pythVaultEntries.length > 0) {
+        const refreshedMap = await executeBatchLensWithPythSimulation<Record<string, unknown>>(
+          pythVaultEntries,
+          eulerLensAddresses.value!.vaultLens as Address,
+          eulerVaultLensABI,
+          'getVaultInfoFull',
+          eulerCoreAddresses.value!.evc,
+          rpcUrl.value,
+          PYTH_HERMES_URL,
         )
 
         if (chainId.value !== startChainId) return
 
-        // Replace original vaults with refreshed versions
-        const refreshedMap = new Map(refreshedVaults.map(v => [v.address, v]))
-        validVaults = validVaults.map(v => refreshedMap.get(v.address) || v)
+        validVaults = validVaults.map((vault) => {
+          const raw = refreshedMap.get(vault.address)
+          if (!raw) return vault
+          try {
+            return processRawVaultData(raw, vault.address, verifiedVaultAddresses.value)
+          }
+          catch (e) {
+            logWarn('vault/pythRefresh', e, { severity: 'error' })
+            return vault
+          }
+        })
       }
     }
 
@@ -685,8 +569,8 @@ export const fetchVaults = async function* (
       validVaults = await Promise.all(
         validVaults.map(async (vault) => {
           const [assetPriceInfo, unitOfAccountPriceInfo] = await Promise.all([
-            resolveAssetPriceInfo(EVM_PROVIDER_URL, utilsLensAddress, vault.asset.address),
-            resolveUnitOfAccountPriceInfo(EVM_PROVIDER_URL, utilsLensAddress, vault.unitOfAccount),
+            resolveAssetPriceInfo(rpcUrl.value, utilsLensAddress, vault.asset.address),
+            resolveUnitOfAccountPriceInfo(rpcUrl.value, utilsLensAddress, vault.unitOfAccount),
           ])
           return { ...vault, assetPriceInfo, unitOfAccountPriceInfo }
         }),
@@ -704,13 +588,13 @@ export const fetchVaults = async function* (
   }
 }
 
-export const fetchEarnVaults = async function* (): AsyncGenerator<
+export const fetchEarnVaults = async function* (vaultAddresses?: string[]): AsyncGenerator<
   VaultIteratorResult<EarnVault>,
   void,
   unknown
 > {
-  const { EVM_PROVIDER_URL: _EVM_PROVIDER_URL } = useEulerConfig()
-  const { eulerLensAddresses, eulerPeripheryAddresses, chainId } = useEulerAddresses()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
+  const { eulerLensAddresses, chainId } = useEulerAddresses()
   const { earnVaults, isLoading } = useEulerLabels()
 
   const startChainId = chainId.value
@@ -720,7 +604,6 @@ export const fetchEarnVaults = async function* (): AsyncGenerator<
       return (
         eulerLensAddresses.value?.eulerEarnVaultLens
         && eulerLensAddresses.value?.utilsLens
-        && eulerPeripheryAddresses.value?.eulerEarnGovernedPerspective
         && !isLoading.value
       )
     }),
@@ -729,24 +612,16 @@ export const fetchEarnVaults = async function* (): AsyncGenerator<
   if (
     !eulerLensAddresses.value?.eulerEarnVaultLens
     || !eulerLensAddresses.value?.utilsLens
-    || !eulerPeripheryAddresses.value?.eulerEarnGovernedPerspective
   ) {
     throw new Error('Euler Earn addresses not loaded yet')
   }
 
-  const client = getPublicClient(_EVM_PROVIDER_URL)
+  const client = rpcClient.value!
 
-  const { isCustomLabelsRepo: _isCustomLabelsRepo } = useDeployConfig()
-  const verifiedVaults = _isCustomLabelsRepo.value
-    ? earnVaults.value
-    : await client.readContract({
-      address: eulerPeripheryAddresses.value.eulerEarnGovernedPerspective as Address,
-      abi: eulerPerspectiveABI,
-      functionName: 'verifiedArray',
-    }) as string[]
+  const verifiedVaults = vaultAddresses || earnVaults.value
 
   // Start block prefetch in parallel - will be awaited when needed for APY calculation
-  const blockCachePromise = fetchBlockDataForAPY(_EVM_PROVIDER_URL)
+  const blockCachePromise = fetchBlockDataForAPY()
 
   // Helper to fetch a single vault (lens + price only, APY calculated after)
   type PartialEarnVault = Omit<EarnVault, 'interestRateInfo'> & { decimals: bigint }
@@ -774,13 +649,13 @@ export const fetchEarnVaults = async function* (): AsyncGenerator<
       })
 
       const assetPriceInfo = await resolveAssetPriceInfo(
-        _EVM_PROVIDER_URL,
+        rpcUrl.value,
         eulerLensAddresses.value!.utilsLens,
         data.asset as string,
       )
 
       return {
-        verified: true,
+        verified: earnVaults.value.includes(vaultAddress),
         type: 'earn',
         address: data.vault,
         name: data.vaultName,
@@ -837,7 +712,7 @@ export const fetchEarnVaults = async function* (): AsyncGenerator<
       .filter((v): v is PartialEarnVault => v !== undefined)
       .map(async (vaultData) => {
         const supplyAPYNumber = blockCache
-          ? await calculateEarnVaultAPYWithCache(vaultData.address, _EVM_PROVIDER_URL, vaultData.decimals, blockCache)
+          ? await calculateEarnVaultAPYWithCache(vaultData.address, vaultData.decimals, blockCache)
           : 0
         return {
           ...vaultData,

@@ -5,6 +5,7 @@ import { formatAssetValue } from '~/services/pricing/priceProvider'
 import { useEulerEntitiesOfEarnVault, useEulerProductOfVault } from '~/composables/useEulerLabels'
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { isVaultBlockedByCountry } from '~/composables/useGeoBlock'
+import { isEarnVaultDeprecated, getEarnVaultDeprecationReason, getEarnVaultDescription } from '~/utils/eulerLabelsUtils'
 import { autoLink } from '~/utils/autoLink'
 
 const { vault } = defineProps<{ vault: EarnVault }>()
@@ -15,11 +16,16 @@ const vaultAddress = computed(() => getAddress(vault.address))
 const product = useEulerProductOfVault(vaultAddress)
 const entities = useEulerEntitiesOfEarnVault(vault)
 const isOwnerVerified = computed(() => isEarnVaultOwnerVerified(vault))
+const earnDescription = computed(() => getEarnVaultDescription(vault.address))
 
 const isDeprecated = computed(() => {
-  return product.deprecatedVaults?.includes(vaultAddress.value) ?? false
+  return isEarnVaultDeprecated(vault.address)
+    || (product.deprecatedVaults?.includes(vaultAddress.value) ?? false)
 })
-const deprecationReason = computed(() => isDeprecated.value ? product.deprecationReason : '')
+const deprecationReason = computed(() => {
+  if (!isDeprecated.value) return ''
+  return getEarnVaultDeprecationReason(vault.address) || product.deprecationReason || ''
+})
 const isRestricted = computed(() => isVaultBlockedByCountry(vault.address))
 
 const priceDisplay = ref('-')
@@ -44,25 +50,27 @@ const feeDisplay = computed(() => {
         v-if="isDeprecated && deprecationReason"
         class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
       >
-        <div class="flex items-start gap-8">
+        <div class="flex items-center gap-8">
           <SvgIcon
             name="warning"
-            class="!w-20 !h-20 flex-shrink-0 mt-2"
+            class="!w-20 !h-20 flex-shrink-0"
           />
+          <!-- eslint-disable vue/no-v-html -- trusted label content -->
           <p
             class="text-p3 text-warning-500 auto-link"
             v-html="autoLink(deprecationReason)"
           />
+          <!-- eslint-enable vue/no-v-html -->
         </div>
       </div>
       <div
         v-if="isRestricted"
         class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
       >
-        <div class="flex items-start gap-8">
+        <div class="flex items-center gap-8">
           <SvgIcon
             name="warning"
-            class="!w-20 !h-20 flex-shrink-0 mt-2"
+            class="!w-20 !h-20 flex-shrink-0"
           />
           <p class="text-p3 text-warning-500">
             This vault is not available in your region.
@@ -70,13 +78,26 @@ const feeDisplay = computed(() => {
         </div>
       </div>
       <div
+        v-if="earnDescription"
+        class="w-full rounded-12 p-16 bg-surface-tertiary"
+      >
+        <!-- eslint-disable vue/no-v-html -- trusted label content -->
+        <p
+          class="text-p3 text-content-secondary auto-link"
+          v-html="autoLink(earnDescription)"
+        />
+        <!-- eslint-enable vue/no-v-html -->
+      </div>
+      <div
         v-if="product.description"
         class="w-full rounded-12 p-16 bg-surface-tertiary"
       >
+        <!-- eslint-disable vue/no-v-html -- trusted label content -->
         <p
           class="text-p3 text-content-secondary auto-link"
           v-html="autoLink(product.description)"
         />
+        <!-- eslint-enable vue/no-v-html -->
       </div>
       <VaultOverviewLabelValue
         label="Price"
@@ -88,7 +109,7 @@ const feeDisplay = computed(() => {
       />
       <VaultOverviewLabelValue
         v-if="enableEntityBrandingDisplay"
-        label="Capital allocator(s)"
+        label="Capital allocator"
       >
         <div
           v-if="entities.length && isOwnerVerified"
@@ -110,25 +131,17 @@ const feeDisplay = computed(() => {
             >{{ entity.name }}</a>
           </div>
         </div>
-        <div
+        <VaultTypeChip
           v-else
-          class="flex gap-8 items-center py-8 px-12 rounded-8 bg-[var(--c-red-opaque-200)] text-red-700"
-        >
-          <UiIcon
-            class="mr-2 !w-20 !h-20"
-            name="warning"
-          />
-          Unknown
-        </div>
+          :vault="vault"
+          type="unknown"
+        />
       </VaultOverviewLabelValue>
       <VaultOverviewLabelValue
         v-if="enableVaultTypeDisplay"
         label="Vault type"
       >
-        <VaultTypeChip
-          :vault="vault"
-          :type="entities.length ? 'managed' : 'unknown'"
-        />
+        <VaultTypeBadges :vault-address="vault.address" />
       </VaultOverviewLabelValue>
     </div>
   </div>

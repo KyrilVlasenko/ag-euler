@@ -2,8 +2,13 @@
 import { formatNumber } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
 import type { Vault, SecuritizeVault } from '~/entities/vault'
-import { getCurrentLiquidationLTV, isLiquidationLTVRamping, getRampTimeRemaining } from '~/entities/vault'
+import type { LTVRampConfig } from '~/entities/vault/ltv'
+import { getCurrentLiquidationLTV, isLiquidationLTVRamping } from '~/entities/vault'
+import { useModal } from '~/components/ui/composables/useModal'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
+import { VaultRampDownModal } from '#components'
+
+const modal = useModal()
 
 const emits = defineEmits<{
   'vault-click': [address: string]
@@ -15,8 +20,14 @@ const onCollateralClick = (address: string) => {
   emits('vault-click', address)
 }
 
-// Build collateral pairs from ALL collateralLTVs where currentLiquidationLTV > 0
-// This includes collaterals that are ramping down (borrowLTV == 0 but currentLiquidationLTV > 0)
+const onRampDownInfoIconClick = (event: MouseEvent, pair: LTVRampConfig) => {
+  modal.open(VaultRampDownModal, {
+    props: pair,
+  })
+}
+
+// Build collateral pairs from collateralLTVs where currentLiquidationLTV > 0
+// Excludes fully ramped-down collaterals (borrowLTV == 0) with no remaining supply
 const allCollateralPairs = computed(() => {
   const pairs: Array<{
     collateral: Vault | SecuritizeVault
@@ -28,41 +39,28 @@ const allCollateralPairs = computed(() => {
   }> = []
 
   vault.collateralLTVs.forEach((ltv) => {
-    // Check if current liquidation LTV > 0 (not yet fully ramped down)
     if (getCurrentLiquidationLTV(ltv) <= 0n) return
-
-    const pairData = {
-      borrowLTV: ltv.borrowLTV,
-      liquidationLTV: ltv.liquidationLTV,
-      initialLiquidationLTV: ltv.initialLiquidationLTV,
-      targetTimestamp: ltv.targetTimestamp,
-      rampDuration: ltv.rampDuration,
-    }
 
     // Try to find the collateral vault from registry
     const collateralEntry = registryGet(ltv.collateral)
     if (collateralEntry) {
-      pairs.push({ collateral: collateralEntry.vault as Vault | SecuritizeVault, ...pairData })
+      const collateral = collateralEntry.vault as Vault | SecuritizeVault
+      if (ltv.borrowLTV <= 0n && collateral.totalAssets <= 0n) return
+
+      pairs.push({
+        collateral,
+        borrowLTV: ltv.borrowLTV,
+        liquidationLTV: ltv.liquidationLTV,
+        initialLiquidationLTV: ltv.initialLiquidationLTV,
+        targetTimestamp: ltv.targetTimestamp,
+        rampDuration: ltv.rampDuration,
+      })
     }
   })
 
   // Sort by borrow LTV descending (highest first)
   return pairs.sort((a, b) => (b.borrowLTV > a.borrowLTV ? 1 : b.borrowLTV < a.borrowLTV ? -1 : 0))
 })
-
-// Helper to format time remaining
-const formatTimeRemaining = (seconds: bigint): string => {
-  const days = Number(seconds) / 86400
-  if (days >= 1) {
-    return `${Math.ceil(days)} day${Math.ceil(days) > 1 ? 's' : ''}`
-  }
-  const hours = Number(seconds) / 3600
-  if (hours >= 1) {
-    return `${Math.ceil(hours)} hour${Math.ceil(hours) > 1 ? 's' : ''}`
-  }
-  const minutes = Number(seconds) / 60
-  return `${Math.ceil(minutes)} minute${Math.ceil(minutes) > 1 ? 's' : ''}`
-}
 </script>
 
 <template>
@@ -75,9 +73,9 @@ const formatTimeRemaining = (seconds: bigint): string => {
         Collateral exposure
       </p>
       <p class="text-content-secondary">
-        Deposits in this market can be borrowed.
-        Please make sure you're comfortable accepting the collateral
-        listed in the table below before depositing.
+        Deposits in this vault can be borrowed.
+        Please make sure you're comfortable accepting the collaterals
+        listed in the table below before supplying.
       </p>
     </div>
 
@@ -108,27 +106,24 @@ const formatTimeRemaining = (seconds: bigint): string => {
             <template #label>
               <span class="flex items-center gap-4">
                 Liquidation LTV
-                <span
+                <SvgIcon
                   v-if="isLiquidationLTVRamping(pair)"
-                  @click.stop.prevent
-                >
-                  <UiFootnote
-                    title="LTV Ramping"
-                    :text="`The Liquidation LTV for this collateral is currently being reduced. Target Liquidation LTV: ${formatNumber(nanoToValue(pair.liquidationLTV, 2), 2)}%. Time remaining: ${formatTimeRemaining(getRampTimeRemaining(pair))}.`"
-                    class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
-                  />
-                </span>
+                  class="!w-20 !h-20 text-content-muted cursor-pointer hover:text-content-secondary"
+                  name="info-circle"
+                  @click.stop.prevent="onRampDownInfoIconClick($event, pair)"
+                />
               </span>
             </template>
-            <div class="flex items-center gap-4">
+            <span class="flex items-center gap-4">
               <SvgIcon
                 v-if="isLiquidationLTVRamping(pair)"
                 name="arrow-top-right"
-                class="!w-14 !h-14 text-warning-500 shrink-0 rotate-180"
+                class="!w-14 !h-14 text-warning-500 shrink-0 rotate-180 cursor-pointer"
                 title="Liquidation LTV ramping down"
+                @click.stop.prevent="onRampDownInfoIconClick($event, pair)"
               />
-              <span>{{ `${formatNumber(nanoToValue(getCurrentLiquidationLTV(pair), 2), 2)}%` }}</span>
-            </div>
+              {{ `${formatNumber(nanoToValue(getCurrentLiquidationLTV(pair), 2), 2)}%` }}
+            </span>
           </VaultOverviewLabelValue>
         </div>
       </div>

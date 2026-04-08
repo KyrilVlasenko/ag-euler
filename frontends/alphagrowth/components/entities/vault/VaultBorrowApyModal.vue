@@ -2,6 +2,7 @@
 import { DateTime } from 'luxon'
 import { formatNumber } from '~/utils/string-utils'
 import type { RewardCampaign } from '~/entities/reward-campaign'
+import { PROVIDER_LABELS, PROVIDER_LOGOS } from '~/entities/reward-campaign'
 import type { IntrinsicApyInfo } from '~/entities/intrinsic-apy'
 
 const emits = defineEmits(['close'])
@@ -25,13 +26,14 @@ const totalBorrowApy = computed(() => borrowingAPY + intrinsicApyValue.value - (
 const rewardsInfo = computed(() => {
   if (!campaigns) return []
   return campaigns
-    .filter(c => c.endTimestamp > Math.floor(Date.now() / 1000))
+    .filter(c => c.endTimestamp > Math.floor(Date.now() / 1000) || c.endTimestamp === 0)
     .map(c => ({
       id: `${c.vault}-${c.provider}-${c.type}-${c.endTimestamp}`,
       apr: c.apr,
-      endDate: DateTime.fromSeconds(c.endTimestamp),
+      endDate: c.endTimestamp > 0 ? DateTime.fromSeconds(c.endTimestamp) : null,
       rewardToken: c.rewardToken || { symbol: 'Unknown', icon: '' },
       source: c.provider,
+      sourceUrl: c.sourceUrl,
       isCollateralSpecific: c.type === 'euler_borrow_collateral',
     }))
     .sort((a, b) => a.rewardToken.symbol.localeCompare(b.rewardToken.symbol))
@@ -123,10 +125,29 @@ const handleClose = () => {
             alt="Reward token logo"
           >
           <p class="ml-12">
-            {{ reward.rewardToken.symbol === 'WTAC' ? 'TAC' : reward.rewardToken.symbol }}
+            {{ reward.rewardToken.symbol }}
           </p>
           <p class="ml-4 text-euler-dark-900">
-            ({{ reward.source === 'brevis' ? 'Brevis, ' : '' }}{{ reward.isCollateralSpecific ? 'collateral bonus, ' : '' }}ends {{ reward.endDate.toFormat('MMMM dd, yyyy') }})
+            (<a
+              v-if="reward.sourceUrl"
+              :href="reward.sourceUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline"
+              @click.stop
+            ><img
+              v-if="PROVIDER_LOGOS[reward.source]"
+              :src="PROVIDER_LOGOS[reward.source]"
+              class="w-14 h-14 inline-block align-middle mr-2"
+              :alt="PROVIDER_LABELS[reward.source]"
+            >{{ PROVIDER_LABELS[reward.source] || reward.source }}</a><template v-else>
+              <img
+                v-if="PROVIDER_LOGOS[reward.source]"
+                :src="PROVIDER_LOGOS[reward.source]"
+                class="w-14 h-14 inline-block align-middle mr-2"
+                :alt="PROVIDER_LABELS[reward.source]"
+              >{{ PROVIDER_LABELS[reward.source] || reward.source }}
+            </template>{{ reward.isCollateralSpecific ? ', collateral bonus' : '' }}{{ reward.endDate ? `, ends ${reward.endDate.toFormat('MMMM dd, yyyy')}` : '' }})
           </p>
         </div>
         <div class="text-p2">

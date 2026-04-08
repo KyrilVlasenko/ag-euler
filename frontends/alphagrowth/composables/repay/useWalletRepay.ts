@@ -3,11 +3,12 @@ import { useAccount } from '@wagmi/vue'
 import { formatUnits } from 'viem'
 import { FixedPoint } from '~/utils/fixed-point'
 import { logWarn } from '~/utils/errorHandling'
+import { getTotalCollateralValue } from '~/utils/position-estimates'
 import { useModal } from '~/components/ui/composables/useModal'
 import { OperationReviewModal } from '#components'
 import { useToast } from '~/components/ui/composables/useToast'
 import { getNetAPY } from '~/entities/vault'
-import { getAssetUsdValue, getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
+import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
 import type { AccountBorrowPosition } from '~/entities/account'
 import type { TxPlan } from '~/entities/txPlan'
 import { valueToNano } from '~/utils/crypto-utils'
@@ -30,6 +31,7 @@ interface UseWalletRepayOptions {
   borrowApy: ComputedRef<number>
   collateralSupplyRewardApy: ComputedRef<number>
   borrowRewardApy: ComputedRef<number>
+  oraclePriceRatio: ComputedRef<number | null>
 }
 
 export const useWalletRepay = (options: UseWalletRepayOptions) => {
@@ -49,6 +51,7 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
     borrowApy,
     collateralSupplyRewardApy,
     borrowRewardApy,
+    oraclePriceRatio,
   } = options
 
   const router = useRouter()
@@ -61,10 +64,13 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
 
   const amount = ref('')
   const walletRepayPercent = ref(0)
-  const balance = ref(0n)
-  const estimateNetAPY = ref(0)
-  const estimateUserLTV = ref(0n)
-  const estimateHealth = ref(0n)
+  const hasEstimate = ref(false)
+  const _estimateNetAPY = ref(0)
+  const _estimateUserLTV = ref(0n)
+  const _estimateHealth = ref(0n)
+  const estimateNetAPY = computed(() => hasEstimate.value ? _estimateNetAPY.value : netAPY.value)
+  const estimateUserLTV = computed(() => hasEstimate.value ? _estimateUserLTV.value : (position.value?.userLTV ?? 0n))
+  const estimateHealth = computed(() => hasEstimate.value ? _estimateHealth.value : (position.value?.health ?? 0n))
   const estimatesError = ref('')
   const isEstimatesLoading = ref(false)
 
@@ -74,26 +80,17 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
   ))
   const borrowedFixed = computed(() => FixedPoint.fromValue(position.value?.borrowed || 0n, position.value?.borrow.decimals || 18))
   const suppliedFixed = computed(() => FixedPoint.fromValue(position.value?.supplied || 0n, position.value?.collateral.decimals || 18))
-  const priceFixed = computed(() => FixedPoint.fromValue(position.value?.price || 0n, 18))
-  const balanceFixed = computed(() => FixedPoint.fromValue(balance.value, borrowVault.value?.decimals || 18))
-
+  const priceFixed = computed(() => {
+    const ratio = oraclePriceRatio.value
+    if (ratio && Number.isFinite(ratio) && ratio > 0) {
+      return FixedPoint.fromValue(BigInt(Math.round(ratio * 1e18)), 18)
+    }
+    return FixedPoint.fromValue(0n, 18)
+  })
   const isSubmitDisabled = computed(() => {
     if (!isConnected.value) return false
     return !(+amount.value) || !!estimatesError.value || isEstimatesLoading.value
   })
-
-  const updateBalance = async () => {
-    if (!isConnected.value || !position.value || !borrowVault.value) {
-      balance.value = 0n
-      return
-    }
-    const borrowedUsd = (await getAssetUsdValue(position.value.borrowed, borrowVault.value, 'off-chain')) ?? 0.01
-    const factor = Math.pow(10, 2)
-    const borrowedRounded = Math.ceil(borrowedUsd * factor) / factor
-    balance.value = FixedPoint.fromValue(valueToNano(borrowedRounded, 4), 4)
-      .div(FixedPoint.fromValue(borrowVault.value.liabilityPriceInfo.amountOutMid, Number(borrowVault.value.decimals)))
-      .value
-  }
 
   const submit = async () => {
     if (isPreparing.value || isSubmitting.value || !position.value || !borrowVault.value || !collateralVault.value) {
@@ -103,7 +100,8 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
     isPreparing.value = true
     try {
       const amountNano = valueToNano(amount.value || '0', borrowVault.value.asset.decimals)
-      const shouldFullRepay = balance.value <= amountNano
+      const currentDebt = position.value.borrowed || 0n
+      const shouldFullRepay = amountNano >= currentDebt
 
       try {
         plan.value = shouldFullRepay
@@ -160,7 +158,8 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
       if (!position.value || !borrowVault.value || !collateralVault.value) return
 
       const amountNano = valueToNano(amount.value, borrowVault.value.asset.decimals)
-      const isFullRepay = balance.value <= amountNano
+      const currentDebt = position.value.borrowed || 0n
+      const isFullRepay = amountNano >= currentDebt
       const txPlan = isFullRepay
         ? await buildFullRepayPlan(
           borrowVault.value.address,
@@ -209,7 +208,7 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
         getAssetUsdValueOrZero((position.value.supplied || 0n), collateralVault.value, 'off-chain'),
         getAssetUsdValueOrZero((position.value.borrowed || 0n) - valueToNano(amount.value, borrowVault.value.decimals), borrowVault.value, 'off-chain'),
       ])
-      estimateNetAPY.value = getNetAPY(
+      _estimateNetAPY.value = getNetAPY(
         supplyUsd,
         collateralSupplyApy.value,
         borrowUsd,
@@ -217,16 +216,26 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
         collateralSupplyRewardApy.value || null,
         borrowRewardApy.value || null,
       )
-      const collateralValue = suppliedFixed.value.mul(priceFixed.value)
+      // Use on-chain LTV to derive total collateral value (multi-collateral aware)
+      const totalValue = getTotalCollateralValue(position.value!)
+      const collateralValueFl = totalValue !== null
+        ? totalValue
+        : suppliedFixed.value.mul(priceFixed.value).toUnsafeFloat()
+      const collateralValue = FixedPoint.fromValue(
+        BigInt(Math.round(collateralValueFl * 1e18)),
+        18,
+      )
       const userLtvFixed = collateralValue.isZero()
         ? FixedPoint.fromValue(0n, 18)
         : (borrowedFixed.value.sub(amountFixed.value))
             .div(collateralValue)
             .mul(FixedPoint.fromValue(100n, 0))
-      estimateUserLTV.value = userLtvFixed.value
-      estimateHealth.value = (userLtvFixed.isZero() || userLtvFixed.isNegative())
-        ? 0n
-        : FixedPoint.fromValue(position.value!.liquidationLTV, 2).div(userLtvFixed).value
+      const healthFixed = (userLtvFixed.isZero() || userLtvFixed.isNegative())
+        ? null
+        : FixedPoint.fromValue(position.value!.liquidationLTV, 2).div(userLtvFixed)
+      _estimateUserLTV.value = userLtvFixed.toScaledBigint(18)
+      _estimateHealth.value = healthFixed ? healthFixed.toScaledBigint(18) : 10n ** 36n
+      hasEstimate.value = true
 
       if (userLtvFixed.gte(FixedPoint.fromValue(position.value!.liquidationLTV, 2))) {
         throw new Error('Not enough liquidity for the vault, LTV is too large')
@@ -234,9 +243,7 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
     }
     catch (e: unknown) {
       logWarn('walletRepay/estimates', e)
-      estimateNetAPY.value = netAPY.value
-      estimateUserLTV.value = position.value!.userLTV
-      estimateHealth.value = position.value!.health
+      hasEstimate.value = false
       estimatesError.value = (e as { message: string }).message
     }
     finally {
@@ -288,21 +295,23 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
     updateEstimates()
   })
 
-  const initEstimates = (currentNetAPY: number, currentUserLTV: bigint, currentHealth: bigint) => {
-    estimateNetAPY.value = currentNetAPY
-    estimateUserLTV.value = currentUserLTV
-    estimateHealth.value = currentHealth
+  const initEstimates = () => {
+    hasEstimate.value = false
+    estimatesError.value = ''
+    isEstimatesLoading.value = false
   }
 
   const resetOnTabSwitch = () => {
     amount.value = ''
     walletRepayPercent.value = 0
+    hasEstimate.value = false
+    estimatesError.value = ''
+    isEstimatesLoading.value = false
   }
 
   return {
     amount,
     walletRepayPercent,
-    balance,
     estimateNetAPY,
     estimateUserLTV,
     estimateHealth,
@@ -313,8 +322,6 @@ export const useWalletRepay = (options: UseWalletRepayOptions) => {
     borrowedFixed,
     suppliedFixed,
     priceFixed,
-    balanceFixed,
-    updateBalance,
     submit,
     send,
     onWalletRepayPercentInput,

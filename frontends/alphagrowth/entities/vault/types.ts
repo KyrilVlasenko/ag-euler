@@ -69,6 +69,9 @@ export interface SecuritizeVault extends Erc4626Vault {
   supply: bigint // Same as totalAssets (no borrowing)
   borrow: bigint // Always 0 (securitize vaults can't be borrowed from)
   interestRateInfo: VaultInterestRateInfo // Zero-valued
+  assetPriceInfo?: {
+    amountOutMid: bigint
+  }
 }
 export interface Vault {
   verified: boolean
@@ -111,7 +114,7 @@ export interface Vault {
   hookTarget: string
   irmInfo?: VaultIRMInfo
   // Vault category: 'escrow' for escrow vaults, undefined/'standard' for regular EVK vaults
-  vaultCategory?: 'standard' | 'escrow' | 'collateral'
+  vaultCategory?: 'standard' | 'escrow'
 }
 export interface BorrowVaultPair {
   borrow: Vault

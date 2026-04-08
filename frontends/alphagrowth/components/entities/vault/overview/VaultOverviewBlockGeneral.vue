@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getAddress, zeroAddress } from 'viem'
+import { getAddress } from 'viem'
 import type { Vault } from '~/entities/vault'
 import { formatAssetValue } from '~/services/pricing/priceProvider'
 import { useEulerEntitiesOfVault, useEulerProductOfVault } from '~/composables/useEulerLabels'
@@ -17,6 +17,9 @@ const vaultAddress = computed(() => getAddress(vault.address))
 const product = useEulerProductOfVault(vaultAddress)
 const entities = useEulerEntitiesOfVault(vault)
 const marketProductKey = computed(() => getProductKeyByVault(vault.address))
+const description = computed(() => {
+  return product.vaultOverrides?.[vaultAddress.value]?.description ?? product.description
+})
 
 const isDeprecated = computed(() => {
   return product.deprecatedVaults?.includes(vaultAddress.value) ?? false
@@ -42,23 +45,6 @@ watchEffect(async () => {
   const price = await formatAssetValue(1, vault, 'off-chain')
   priceDisplay.value = price.hasPrice ? formatUsdValue(price.usdValue) : '-'
 })
-
-const vaultGovernanceType = computed(() => {
-  // Escrow vault
-  if (vault.vaultCategory === 'escrow') {
-    return 'escrow'
-  }
-  // Has matching entity → governed
-  if (entities.length) {
-    return 'governed'
-  }
-  // Zero governorAdmin → ungoverned
-  if (!vault.governorAdmin || vault.governorAdmin === zeroAddress) {
-    return 'ungoverned'
-  }
-  // Non-zero but no matching entity → unknown
-  return 'unknown'
-})
 </script>
 
 <template>
@@ -71,25 +57,27 @@ const vaultGovernanceType = computed(() => {
         v-if="isDeprecated && deprecationReason"
         class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
       >
-        <div class="flex items-start gap-8">
+        <div class="flex items-center gap-8">
           <SvgIcon
             name="warning"
-            class="!w-20 !h-20 flex-shrink-0 mt-2"
+            class="!w-20 !h-20 flex-shrink-0"
           />
+          <!-- eslint-disable vue/no-v-html -- trusted label content -->
           <p
             class="text-p3 text-warning-500 auto-link"
             v-html="autoLink(deprecationReason)"
           />
+          <!-- eslint-enable vue/no-v-html -->
         </div>
       </div>
       <div
         v-if="isRestricted"
         class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
       >
-        <div class="flex items-start gap-8">
+        <div class="flex items-center gap-8">
           <SvgIcon
             name="warning"
-            class="!w-20 !h-20 flex-shrink-0 mt-2"
+            class="!w-20 !h-20 flex-shrink-0"
           />
           <p class="text-p3 text-warning-500">
             This vault is not available in your region.
@@ -97,13 +85,15 @@ const vaultGovernanceType = computed(() => {
         </div>
       </div>
       <div
-        v-if="product.description"
+        v-if="description"
         class="w-full rounded-12 p-16 bg-surface-tertiary"
       >
+        <!-- eslint-disable vue/no-v-html -- trusted label content -->
         <p
           class="text-p3 text-content-secondary auto-link"
-          v-html="autoLink(product.description)"
+          v-html="autoLink(description)"
         />
+        <!-- eslint-enable vue/no-v-html -->
       </div>
       <VaultOverviewLabelValue
         label="Price"
@@ -125,21 +115,11 @@ const vaultGovernanceType = computed(() => {
         v-if="enableEntityBrandingDisplay"
         label="Risk manager"
       >
-        <div
+        <VaultTypeChip
           v-if="!isGovernorVerified"
-          class="flex gap-8 items-center py-8 px-12 rounded-8 bg-[var(--c-red-opaque-200)] text-red-700"
-        >
-          <UiIcon
-            class="mr-2 !w-20 !h-20"
-            name="warning"
-          />
-          Unknown
-        </div>
-        <div
-          v-else-if="isGovernanceLimited"
-        >
-          -
-        </div>
+          :vault="vault"
+          type="unknown"
+        />
         <div
           v-else-if="entities.length"
           class="flex flex-col gap-16"
@@ -148,6 +128,7 @@ const vaultGovernanceType = computed(() => {
             v-for="(entity, idx) in entities"
             :key="idx"
             class="flex items-center gap-8"
+            :class="{ 'opacity-20': isGovernanceLimited }"
           >
             <BaseAvatar
               :label="entity.name"
@@ -159,6 +140,10 @@ const vaultGovernanceType = computed(() => {
               class="text-p2 text-content-primary hover:text-accent-600 underline transition-colors"
             >{{ entity.name }}</a>
           </div>
+          <span
+            v-if="isGovernanceLimited"
+            class="text-p3 text-content-tertiary"
+          >Limited risk management</span>
         </div>
         <div v-else>
           -
@@ -168,10 +153,7 @@ const vaultGovernanceType = computed(() => {
         v-if="enableVaultTypeDisplay"
         label="Vault type"
       >
-        <VaultTypeChip
-          :vault="vault"
-          :type="vaultGovernanceType"
-        />
+        <VaultTypeBadges :vault-address="vault.address" />
       </VaultOverviewLabelValue>
       <VaultOverviewLabelValue label="Can be borrowed">
         <div class="flex items-center gap-8">

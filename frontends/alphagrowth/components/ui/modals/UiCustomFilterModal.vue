@@ -1,22 +1,8 @@
 <script setup lang="ts">
+import type { CustomFilter, FilterMetricOption, FilterMetricUnit } from './customFilter.types'
 import { formatCompactUsdValue } from '~/utils/string-utils'
 
-export type FilterMetricUnit = 'usd' | 'percent' | 'multiplier'
-
-export interface FilterMetricOption {
-  key: string
-  label: string
-  shortLabel: string
-  unit: FilterMetricUnit
-}
-
-export interface CustomFilter {
-  id: string
-  metric: string
-  operator: 'gt' | 'lt'
-  value: number
-  label: string
-}
+export type { CustomFilter, FilterMetricOption, FilterMetricUnit }
 
 const props = defineProps<{
   metrics: FilterMetricOption[]
@@ -204,12 +190,12 @@ const close = () => {
     }
 
     &--active {
-      background: rgba(196, 155, 100, 0.15);
+      background: rgba(var(--accent-rgb), 0.15);
       color: var(--accent-700);
       font-weight: 600;
 
       &:hover {
-        background: rgba(196, 155, 100, 0.2);
+        background: rgba(var(--accent-rgb), 0.2);
       }
     }
   }

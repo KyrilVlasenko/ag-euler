@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ title?: string, loading?: boolean }>()
+defineProps<{ title?: string, description?: string, loading?: boolean }>()
 </script>
 
 <template>
@@ -7,16 +7,24 @@ defineProps<{ title?: string, loading?: boolean }>()
     v-bind="$attrs"
     class="flex flex-col mobile:min-h-[calc(100dvh-100px)] laptop:max-h-[calc(100dvh-88px)] laptop:overflow-clip laptop:px-16"
   >
-    <h1
-      v-if="title"
-      class="text-p1 pb-4"
-    >
-      {{ title }}
-    </h1>
+    <div v-if="title || description">
+      <h1
+        v-if="title"
+        class="text-p1 pb-4"
+      >
+        {{ title }}
+      </h1>
+      <p
+        v-if="description"
+        class="text-p3 text-content-secondary pb-8"
+      >
+        {{ description }}
+      </p>
+    </div>
 
     <div
       v-if="loading"
-      class="justify-center items-center"
+      class="flex justify-center items-center"
       style="flex: 1"
     >
       <UiLoader />
@@ -30,7 +38,8 @@ defineProps<{ title?: string, loading?: boolean }>()
     </div>
 
     <div
-      class="flex flex-col gap-8 pt-16 mobile:mt-auto laptop:-mx-16 laptop:px-16"
+      v-if="!loading"
+      class="flex flex-col gap-8 pt-16 laptop:-mx-16 laptop:px-16"
     >
       <slot name="buttons" />
     </div>

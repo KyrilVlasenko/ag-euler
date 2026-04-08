@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, toFunctionSelector } from 'viem'
+import { formatUnits, getAddress, toFunctionSelector, zeroAddress } from 'viem'
 import type { TxPlan } from '~/entities/txPlan'
 import type { EVCCall } from '~/utils/evc-converter'
 
@@ -66,9 +66,17 @@ const SELECTOR_LABELS: Record<string, string> = {
   [toFunctionSelector('function verifyDebtMax(address,address,uint256,uint256)')]: 'Verify max debt',
   [toFunctionSelector('function updatePriceFeeds(bytes[])')]: 'Update price feeds',
   [toFunctionSelector('function transferFromSender(address,uint256,address)')]: 'Transfer from wallet',
+  [toFunctionSelector('function deposit()')]: 'Wrap native currency',
 }
 
 const MAX_UINT256 = 2n ** 256n - 1n
+
+// Selectors where the first uint256 param is shares, not assets.
+// Decoding these as assets would show a wrong amount in the UI.
+const SHARES_AMOUNT_SELECTORS = new Set([
+  toFunctionSelector('function redeem(uint256,address,address)'),
+  toFunctionSelector('function repayWithShares(uint256,address)'),
+])
 
 // ---------------------------------------------------------------------------
 // Exported helpers
@@ -90,6 +98,16 @@ export const decodeVaultAddressFromData = (data: string): string | undefined => 
   if (data.length < 138) return undefined
   try {
     return getAddress(`0x${data.slice(98, 138)}`)
+  }
+  catch {
+    return undefined
+  }
+}
+
+export const decodeSecondUint256 = (data: string): bigint | undefined => {
+  if (data.length < 138) return undefined
+  try {
+    return BigInt(`0x${data.slice(74, 138)}`)
   }
   catch {
     return undefined
@@ -129,6 +147,17 @@ export const resolveAmountFromCalldata = (
   targetContract: string,
   getVault: VaultLookup,
 ): { decoded: boolean, amount?: string, isMax?: boolean } => {
+  const selector = data.slice(0, 10).toLowerCase() as `0x${string}`
+
+  // For functions where the first param is shares (not assets),
+  // we can only reliably detect max (uint256.max). The raw share count
+  // cannot be formatted as assets without a conversion rate.
+  if (SHARES_AMOUNT_SELECTORS.has(selector)) {
+    const raw = decodeFirstUint256(data)
+    if (raw === MAX_UINT256) return { decoded: true, isMax: true }
+    return { decoded: false }
+  }
+
   const raw = decodeFirstUint256(data)
   if (raw === undefined) return { decoded: false }
   if (raw === MAX_UINT256) return { decoded: true, isMax: true }
@@ -151,6 +180,7 @@ const getAssetInfoForStep = (
   label: string,
   data: string,
   targetContract: string,
+  evcCall: EVCCall,
   ctx: StepDecodingContext,
   getVault: VaultLookup,
   usedSupply: { value: boolean },
@@ -193,17 +223,45 @@ const getAssetInfoForStep = (
     return { symbol: ctx.asset.symbol, address: ctx.asset.address, amount: 'remaining' }
   }
 
+  if (label === 'Wrap native currency') {
+    // In borrow flows, the wrap operates on the collateral asset, not the borrow asset
+    const wrapAsset = ctx.type === 'borrow' && ctx.supplyingAssetForBorrow
+      ? ctx.supplyingAssetForBorrow
+      : ctx.asset
+    // Derive native currency symbol by stripping the "W" prefix (e.g. WETH → ETH)
+    const nativeSymbol = wrapAsset.symbol.startsWith('W') ? wrapAsset.symbol.slice(1) : wrapAsset.symbol
+    // Native currencies always have 18 decimals
+    const wrapAmount = evcCall.value > 0n
+      ? formatUnits(evcCall.value, 18)
+      : undefined
+    return { symbol: nativeSymbol, address: zeroAddress, amount: wrapAmount }
+  }
+
   if (label === 'Transfer' || label === 'Transfer to account') {
     const knownAmount = label === 'Transfer to account' && ctx.transferAmounts
       ? ctx.transferAmounts[targetContract.toLowerCase()]
       : undefined
-    const transferAmount = knownAmount || (label === 'Transfer to account' ? 'remaining' : undefined)
+    let transferAmount: string | undefined = knownAmount || (label === 'Transfer to account' ? 'remaining' : undefined)
     try {
       const targetVault = getVault(getAddress(targetContract))
       if (targetVault?.asset) return { symbol: targetVault.asset.symbol, address: targetVault.asset.address, amount: transferAmount }
     }
     catch { /* ignore */ }
-    return { symbol: ctx.asset.symbol, address: ctx.asset.address, amount: transferAmount }
+    // For non-vault targets (e.g. WETH.transfer), decode amount from calldata
+    // In borrow flows, use collateral asset metadata
+    const transferAsset = ctx.type === 'borrow' && ctx.supplyingAssetForBorrow
+      ? ctx.supplyingAssetForBorrow
+      : ctx.asset
+    if (!transferAmount) {
+      const transferDecimals = transferAsset === ctx.asset && ctx.asset.decimals
+        ? Number(ctx.asset.decimals)
+        : 18 // wrapped native tokens always have 18 decimals
+      const raw = decodeSecondUint256(data)
+      if (raw !== undefined && raw > 0n) {
+        transferAmount = formatUnits(raw, transferDecimals)
+      }
+    }
+    return { symbol: transferAsset.symbol, address: transferAsset.address, amount: transferAmount }
   }
 
   if (label === 'Borrow' || label === 'Repay') {
@@ -310,20 +368,36 @@ export function buildDisplaySteps(
           })
         }
 
+        let prevLabel = ''
         for (const item of batchItems) {
           index++
           const label = decodeBatchItemLabel(item.data)
-          const stepAssetInfo = getAssetInfoForStep(label, item.data, item.targetContract, ctx, getVault, usedSupply, usedBorrow, usedSwapTo, lastWithdrawAmount)
+          const stepAssetInfo = getAssetInfoForStep(label, item.data, item.targetContract, item, ctx, getVault, usedSupply, usedBorrow, usedSwapTo, lastWithdrawAmount)
           const secondAsset = ctx.supplyingAssetForBorrow || ctx.swapToAsset
           let toAssetInfo: StepAssetInfo | undefined
-          if (label === 'Swap' && ctx.swapToAsset && ctx.swapToAmount) {
+          if (label === 'Wrap native currency') {
+            const wrapToAsset = ctx.type === 'borrow' && ctx.supplyingAssetForBorrow
+              ? ctx.supplyingAssetForBorrow
+              : ctx.asset
+            toAssetInfo = { symbol: wrapToAsset.symbol, address: wrapToAsset.address }
+          }
+          else if (label === 'Swap' && ctx.swapToAsset && ctx.swapToAmount) {
             toAssetInfo = { symbol: ctx.swapToAsset.symbol, address: ctx.swapToAsset.address, amount: ctx.swapToAmount }
           }
           else if (label === 'Update price feeds' && stepAssetInfo && secondAsset && secondAsset.symbol !== ctx.asset.symbol) {
             toAssetInfo = { symbol: secondAsset.symbol, address: secondAsset.address }
           }
-          const displayLabel = label === 'Transfer to account' ? 'Transfer' : label
-          const batchLabelSuffix = label === 'Transfer to account' ? 'to savings' : undefined
+          const displayLabel = label === 'Transfer to account'
+            ? 'Transfer'
+            : label === 'Wrap native currency'
+              ? 'Wrap'
+              : label
+          const isWrapTransfer = label === 'Transfer' && prevLabel === 'Wrap native currency'
+          const batchLabelSuffix = label === 'Transfer to account'
+            ? 'to savings'
+            : isWrapTransfer
+              ? 'to wallet'
+              : undefined
           steps.push({
             index,
             label: displayLabel,
@@ -334,6 +408,7 @@ export function buildDisplaySteps(
             iconOnly: label === 'Update price feeds',
           })
 
+          prevLabel = label
           if (hasTermsOfUse && label === 'Sign terms of use') {
             index++
             const permitAsset = ctx.type === 'borrow' && ctx.supplyingAssetForBorrow

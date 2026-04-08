@@ -2,10 +2,10 @@
 import { useVaults } from '~/composables/useVaults'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
 import { useEulerAddresses } from '~/composables/useEulerAddresses'
-import { getAssetLogoUrl } from '~/composables/useTokens'
+import { getAssetLogoUrl } from '~/composables/useTokenList'
 import type { EarnVault } from '~/entities/vault'
 import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
-import { getProductByVault, getEntitiesByEarnVault, isVaultFeatured, isVaultDeprecated } from '~/utils/eulerLabelsUtils'
+import { getProductByVault, getEntitiesByEarnVault, isVaultFeatured, isVaultDeprecated, isEarnVaultNotExplorable } from '~/utils/eulerLabelsUtils'
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { useCustomFilters } from '~/composables/useCustomFilters'
 import { useVaultSearch } from '~/composables/useVaultSearch'
@@ -17,9 +17,10 @@ defineOptions({
 const { isEarnUpdating } = useVaults()
 const isPricesReady = ref(false)
 const isLoading = computed(() => isEarnUpdating.value || !isPricesReady.value)
+const { isSlow } = useSlowLoading(isLoading)
 const { getEarnVaults } = useVaultRegistry()
 const { chainId } = useEulerAddresses()
-const list = computed(() => getEarnVaults().filter(v => v.verified))
+const list = computed(() => getEarnVaults().filter(v => v.verified && !isEarnVaultNotExplorable(v.address)))
 
 const { enableEntityBranding } = useDeployConfig()
 
@@ -240,10 +241,16 @@ const sortedList = computed(() => {
     </div>
 
     <div class="flex flex-col flex-1">
-      <UiLoader
+      <div
         v-if="isLoading"
-        class="flex-1 self-center justify-self-center"
-      />
+        class="flex flex-col flex-1 items-center justify-center gap-12"
+      >
+        <UiLoader />
+        <span
+          v-if="isSlow"
+          class="text-p2 text-content-tertiary text-center max-w-[240px]"
+        >Loading is taking longer than usual. Please check your connection.</span>
+      </div>
 
       <VaultsEarnList
         v-else-if="sortedList.length"

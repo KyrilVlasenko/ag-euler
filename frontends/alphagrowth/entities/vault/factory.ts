@@ -56,8 +56,12 @@ export const isSecuritizeVault = async (address: string): Promise<boolean> => {
       return registryType === 'securitize'
     }
 
-    // Fall back to subgraph query
-    const { eulerPeripheryAddresses } = useEulerAddresses()
+    // Fall back to subgraph query — wait for addresses to load
+    const { eulerPeripheryAddresses, isReady, loadEulerConfig } = useEulerAddresses()
+    if (!isReady.value) {
+      loadEulerConfig()
+      await until(computed(() => isReady.value)).toBeTruthy()
+    }
     const securitizeFactory = eulerPeripheryAddresses.value?.securitizeFactory
     if (!securitizeFactory) {
       return false

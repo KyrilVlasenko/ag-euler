@@ -3,7 +3,7 @@ import { useAccount } from '@wagmi/vue'
 import type { EarnVault } from '~/entities/vault'
 import { formatAssetValue } from '~/services/pricing/priceProvider'
 import { useEulerProductOfVault, useEulerEntitiesOfEarnVault } from '~/composables/useEulerLabels'
-import { isVaultFeatured } from '~/utils/eulerLabelsUtils'
+import { isVaultFeatured, getEarnVaultDescription } from '~/utils/eulerLabelsUtils'
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { isVaultBlockedByCountry } from '~/composables/useGeoBlock'
 import { formatNumber, formatCompactUsdValue } from '~/utils/string-utils'
@@ -43,6 +43,7 @@ const isGeoBlocked = computed(() => isVaultBlockedByCountry(vault.address))
 const isFeatured = computed(() => isVaultFeatured(vault.address))
 const isUnverified = computed(() => !vault.verified)
 const displayName = computed(() => product.name || vault.name)
+const description = computed(() => getEarnVaultDescription(vault.address))
 
 const prices = ref<{ totalSupply: string, liquidity: string, walletBalance: string }>({
   totalSupply: '-',
@@ -64,6 +65,16 @@ watchEffect(async () => {
   }
 })
 
+const statsGridCols = computed(() => {
+  const cols: string[] = []
+  if (enableEntityBranding) cols.push('1fr')
+  cols.push('1fr') // Total supply
+  cols.push('1fr') // Available liquidity
+  cols.push('1fr') // Strategies
+  if (isConnected.value) cols.push('1fr') // In wallet
+  return cols.join(' ')
+})
+
 const onSupplyInfoIconClick = (event: MouseEvent) => {
   event.preventDefault()
   event.stopPropagation()
@@ -73,6 +84,7 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
       intrinsicAPY: getIntrinsicApy(vault.asset.address),
       intrinsicApyInfo: getIntrinsicApyInfo(vault.asset.address),
       campaigns: getSupplyRewardCampaigns(vault.address),
+      baseApyAverageLabel: '1h',
     },
   })
 }
@@ -80,11 +92,11 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
 
 <template>
   <NuxtLink
-    class="block no-underline bg-surface rounded-xl border border-line-subtle shadow-card transition-all duration-default ease-default hover:shadow-card-hover hover:border-line-emphasis"
+    class="block no-underline bg-surface rounded-xl border border-line-default shadow-card transition-all duration-default ease-default hover:shadow-card-hover hover:border-line-emphasis"
     :class="isGeoBlocked ? 'opacity-50' : ''"
-    :to="`/earn/${vault.address}`"
+    :to="{ path: `/earn/${vault.address}`, query: { network: $route.query.network } }"
   >
-    <div class="flex py-16 px-16 pb-12 border-b border-line-default">
+    <div class="flex py-16 px-16 pb-12 border-b border-line-subtle">
       <AssetAvatar
         :asset="vault.asset"
         size="40"
@@ -121,12 +133,21 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
         <div class="text-h5 text-content-primary">
           {{ vault.asset.symbol }}
         </div>
+        <div
+          v-if="description"
+          class="text-p3 text-content-tertiary mt-4 line-clamp-1"
+        >
+          {{ description }}
+        </div>
       </div>
       <div class="flex flex-col items-end">
         <div class="text-content-tertiary text-p3 mb-4 text-right flex items-center gap-4">
           Supply APY
+          <span class="inline-flex items-center rounded-8 px-8 py-2 bg-accent-100 text-accent-600 text-p5">
+            1h
+          </span>
           <SvgIcon
-            class="!w-16 !h-16 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+            class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
             name="info-circle"
             @click="onSupplyInfoIconClick"
           />
@@ -145,14 +166,27 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
         </div>
       </div>
     </div>
-    <div class="flex py-12 px-16 pb-12 mobile:border-b mobile:border-line-subtle mobile:pb-12">
+    <div
+      class="grid gap-x-16 py-12 px-16 pb-12 mobile:!flex mobile:justify-between mobile:border-b mobile:border-line-subtle mobile:pb-12"
+      :style="{ gridTemplateColumns: statsGridCols }"
+    >
       <div
         v-if="enableEntityBranding"
-        class="flex-1"
+        class="flex-1 mobile:!hidden"
       >
         <div class="text-content-tertiary text-p3 mb-4">Capital allocator</div>
         <div
-          v-if="entityName"
+          v-if="!isOwnerVerified"
+          class="flex gap-8 items-center py-4 px-8 rounded-8 bg-error-100 text-error-500 text-p2 w-fit"
+        >
+          <SvgIcon
+            name="warning"
+            class="!w-16 !h-16"
+          />
+          Unknown
+        </div>
+        <div
+          v-else-if="entityName"
           class="flex items-center gap-6"
         >
           <BaseAvatar
@@ -167,7 +201,7 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
           class="text-p2 text-content-primary"
         >-</div>
       </div>
-      <div class="flex-1">
+      <div class="flex-1 flex flex-col items-center mobile:items-start">
         <div class="text-content-tertiary text-p3 mb-4">Total supply</div>
         <div class="text-p2 text-content-primary">
           {{ prices.totalSupply }}
@@ -179,6 +213,17 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
         </div>
         <div class="text-p2 text-content-primary">
           {{ prices.liquidity }}
+        </div>
+      </div>
+      <div
+        class="flex flex-col flex-1 mobile:!hidden"
+        :class="isConnected ? 'items-center' : 'items-end text-right'"
+      >
+        <div class="text-content-tertiary text-p3 mb-4">
+          Allocates into
+        </div>
+        <div class="text-p2 text-content-primary">
+          {{ vault.strategies.length }} {{ vault.strategies.length === 1 ? 'strategy' : 'strategies' }}
         </div>
       </div>
       <div class="flex flex-col flex-1 items-end text-right mobile:!hidden">
@@ -195,10 +240,7 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
         </template>
       </div>
     </div>
-    <div
-      v-if="enableEntityBranding || isConnected"
-      class="hidden mobile:flex mobile:flex-col gap-12 py-12 px-16 pb-16"
-    >
+    <div class="hidden mobile:flex mobile:flex-col gap-12 py-12 px-16 pb-16">
       <div
         v-if="enableEntityBranding"
         class="flex w-full justify-between"
@@ -207,7 +249,17 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
           <div class="text-content-tertiary text-p3">Capital allocator</div>
         </div>
         <div class="flex gap-8 justify-end items-center text-right flex-1">
-          <template v-if="entityName">
+          <div
+            v-if="!isOwnerVerified"
+            class="flex gap-8 items-center py-4 px-8 rounded-8 bg-error-100 text-error-500 text-p2 w-fit"
+          >
+            <SvgIcon
+              name="warning"
+              class="!w-16 !h-16"
+            />
+            Unknown
+          </div>
+          <template v-else-if="entityName">
             <BaseAvatar
               class="icon--20"
               :label="entityName"
@@ -219,6 +271,14 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
             v-else
             class="text-p2 text-content-primary"
           >-</div>
+        </div>
+      </div>
+      <div class="flex w-full justify-between">
+        <div class="text-content-tertiary text-p3">
+          Allocates into
+        </div>
+        <div class="text-p2 text-content-primary">
+          {{ vault.strategies.length }} {{ vault.strategies.length === 1 ? 'strategy' : 'strategies' }}
         </div>
       </div>
       <div

@@ -235,19 +235,20 @@ export const useOracleAdapterPrices = (
   const prices: Ref<Map<string, AdapterPriceInfo>> = shallowRef(new Map())
   const isLoading = ref(false)
 
-  const { EVM_PROVIDER_URL, PYTH_HERMES_URL } = useEulerConfig()
+  const { PYTH_HERMES_URL } = useEulerConfig()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
   const { eulerCoreAddresses } = useEulerAddresses()
 
   const fetchPrices = async () => {
     const adapterList = adapters.value
     const evcAddress = eulerCoreAddresses.value?.evc
-    if (!adapterList.length || !evcAddress || !EVM_PROVIDER_URL) {
+    if (!adapterList.length || !evcAddress || !rpcUrl.value) {
       prices.value = new Map()
       return
     }
 
     try {
-      const client = getPublicClient(EVM_PROVIDER_URL)
+      const client = rpcClient.value!
 
       // 1. Build known decimals
       const knownDecimals = buildKnownDecimals(sourceVaults.value, collateralVaults.value)
@@ -257,14 +258,14 @@ export const useOracleAdapterPrices = (
 
       // 3. Fetch missing decimals if needed
       if (unknownAddresses.length) {
-        const fetched = await fetchMissingDecimals(unknownAddresses, evcAddress, EVM_PROVIDER_URL)
+        const fetched = await fetchMissingDecimals(unknownAddresses, evcAddress, rpcUrl.value)
         fetched.forEach((dec, addr) => knownDecimals.set(addr, dec))
       }
 
       // 4. Build Pyth update batch items
       const { items: pythItems, totalFee } = await buildPythBatchItems(
         sourceVaults.value,
-        EVM_PROVIDER_URL,
+        rpcUrl.value,
         PYTH_HERMES_URL,
       )
 

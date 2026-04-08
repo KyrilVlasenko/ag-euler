@@ -2,7 +2,6 @@
 import { maxUint256, type Address } from 'viem'
 import { formatNumber, compactNumber, formatCompactUsdValue } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
-import { getPublicClient } from '~/utils/public-client'
 import { vaultConvertToAssetsAbi } from '~/abis/vault'
 import type { Vault } from '~/entities/vault'
 import { getSupplyCapPercentage, getBorrowCapPercentage } from '~/composables/useVaultWarnings'
@@ -10,7 +9,7 @@ import { formatAssetValue } from '~/services/pricing/priceProvider'
 
 const { vault } = defineProps<{ vault: Vault }>()
 
-const { EVM_PROVIDER_URL } = useEulerConfig()
+const { client: rpcClient } = useRpcClient()
 const { borrowList } = useVaults()
 
 const shareTokenExchangeRate: Ref<bigint | undefined> = ref()
@@ -54,7 +53,7 @@ watchEffect(async () => {
 })
 
 const load = async () => {
-  const client = getPublicClient(EVM_PROVIDER_URL)
+  const client = rpcClient.value!
   shareTokenExchangeRate.value = await client.readContract({
     address: vault.address as Address,
     abi: vaultConvertToAssetsAbi,
@@ -74,10 +73,20 @@ load()
     <div class="flex flex-col items-start gap-24">
       <VaultOverviewLabelValue
         v-if="isBorrowable"
-        label="Liquidation bonus"
         :value="`0-${vault.maxLiquidationDiscount / 100n}%`"
         orientation="horizontal"
-      />
+      >
+        <template #label>
+          <span class="flex items-center gap-4">
+            Liquidation bonus
+            <UiFootnote
+              title="Liquidation Bonus"
+              text="The discount a liquidator receives on collateral when liquidating an unhealthy position. The actual bonus scales dynamically from 0% up to this maximum based on how unhealthy the position is. A more unhealthy position offers a larger bonus to incentivise faster liquidation."
+              class="[--ui-footnote-icon-color:var(--text-muted)] hover:[--ui-footnote-icon-color:var(--text-secondary)]"
+            />
+          </span>
+        </template>
+      </VaultOverviewLabelValue>
       <VaultOverviewLabelValue
         label="Supply cap"
         orientation="horizontal"
@@ -124,10 +133,20 @@ load()
       </VaultOverviewLabelValue>
       <VaultOverviewLabelValue
         v-if="isBorrowable"
-        label="Bad debt socialisation"
         :value="vault.configFlags === 0n ? 'Yes' : 'No'"
         orientation="horizontal"
-      />
+      >
+        <template #label>
+          <span class="flex items-center gap-4">
+            Bad debt socialisation
+            <UiFootnote
+              title="Bad Debt Socialisation"
+              text="When enabled, if a liquidated position has remaining debt but no collateral left, the loss is spread across all depositors by reducing the share token value. This prevents bad debt from accumulating in the vault. When disabled, bad debt remains in the system indefinitely."
+              class="[--ui-footnote-icon-color:var(--text-muted)] hover:[--ui-footnote-icon-color:var(--text-secondary)]"
+            />
+          </span>
+        </template>
+      </VaultOverviewLabelValue>
       <VaultOverviewLabelValue
         v-if="isBorrowable"
         label="Interest fee"

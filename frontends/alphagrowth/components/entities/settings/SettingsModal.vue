@@ -10,14 +10,14 @@ defineEmits(['close'])
     title="Settings"
     @close="$emit('close')"
   >
-    <div class="mb-20 rounded-16 border border-euler-dark-600 bg-euler-dark-500 p-16">
+    <div class="mb-20 rounded-16 border border-line-default bg-card p-16">
       <div class="flex items-center justify-between">
         <div>
           <div class="text-p2">
             Theme
           </div>
-          <div class="text-p3 text-euler-dark-700">
-            Follows system setting by default
+          <div class="text-p3 text-content-muted">
+            Dark mode by default
           </div>
         </div>
         <UiSwitch
@@ -26,13 +26,13 @@ defineEmits(['close'])
         />
       </div>
     </div>
-    <div class="mb-20 rounded-16 border border-euler-dark-600 bg-euler-dark-500 p-16">
+    <div class="mb-20 rounded-16 border border-line-default bg-card p-16">
       <div class="flex items-center justify-between">
         <div>
           <div class="text-p2">
             Intrinsic APY
           </div>
-          <div class="text-p3 text-euler-dark-700">
+          <div class="text-p3 text-content-muted">
             Include intrinsic APY in displayed rates
           </div>
         </div>
@@ -42,13 +42,13 @@ defineEmits(['close'])
         />
       </div>
     </div>
-    <div class="mb-20 rounded-16 border border-euler-dark-600 bg-euler-dark-500 p-16">
+    <div class="mb-20 rounded-16 border border-line-default bg-card p-16">
       <div class="flex items-center justify-between">
         <div>
           <div class="text-p2">
             Rewards
           </div>
-          <div class="text-p3 text-euler-dark-700">
+          <div class="text-p3 text-content-muted">
             Include token rewards in displayed rates
           </div>
         </div>

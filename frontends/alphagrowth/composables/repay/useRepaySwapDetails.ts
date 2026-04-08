@@ -5,7 +5,6 @@ import type { AccountBorrowPosition } from '~/entities/account'
 import { getAssetUsdValue } from '~/services/pricing/priceProvider'
 import { SwapperMode } from '~/entities/swap'
 import { buildSwapRouteItems } from '~/utils/swapRouteItems'
-import { formatNumber } from '~/utils/string-utils'
 import { createRaceGuard } from '~/utils/race-guard'
 import type { useSwapRepayQuotes } from '~/composables/repay/useSwapRepayQuotes'
 
@@ -35,8 +34,8 @@ export const useRepaySwapDetails = (options: UseRepaySwapDetailsOptions) => {
     const amountIn = formatUnits(BigInt(quotes.quote.value.amountIn), Number(sourceVault.value.asset.decimals))
     const amountOut = formatUnits(BigInt(quotes.quote.value.amountOut), Number(borrowVault.value.asset.decimals))
     return {
-      from: `${formatNumber(amountIn)} ${sourceVault.value.asset.symbol}`,
-      to: `${formatSignificant(amountOut)} ${borrowVault.value.asset.symbol}`,
+      from: `${formatSmartAmount(amountIn)} ${sourceVault.value.asset.symbol}`,
+      to: `${formatSmartAmount(amountOut)} ${borrowVault.value.asset.symbol}`,
     }
   })
 
@@ -83,7 +82,7 @@ export const useRepaySwapDetails = (options: UseRepaySwapDetailsOptions) => {
       getQuoteDiffPct: quotes.getQuoteDiffPct,
       decimals: Number(asset.decimals),
       symbol: asset.symbol,
-      formatAmount: formatSignificant,
+      formatAmount: formatSmartAmount,
       amountField: isExactIn ? 'amountOut' : 'amountIn',
     })
   })

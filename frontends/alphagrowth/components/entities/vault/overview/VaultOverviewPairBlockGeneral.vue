@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { type AnyBorrowVaultPair, getCurrentLiquidationLTV, isLiquidationLTVRamping, getRampTimeRemaining } from '~/entities/vault'
+import { type AnyBorrowVaultPair, getCurrentLiquidationLTV, isLiquidationLTVRamping } from '~/entities/vault'
 import { isAnyVaultBlockedByCountry } from '~/composables/useGeoBlock'
 import { isVaultDeprecated } from '~/utils/eulerLabelsUtils'
 import { getCollateralOraclePrice, getAssetOraclePrice } from '~/services/pricing/priceProvider'
@@ -7,8 +7,9 @@ import { formatNumber, formatSignificant } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
 import { getMaxMultiplier, getMaxRoe } from '~/utils/leverage'
 import type { AccountBorrowPosition } from '~/entities/account'
+import type { LTVRampConfig } from '~/entities/vault/ltv'
 import { useModal } from '~/components/ui/composables/useModal'
-import { VaultNetApyPairModal, VaultMaxRoeModal } from '#components'
+import { VaultNetApyPairModal, VaultMaxRoeModal, VaultRampDownModal } from '#components'
 
 const { pair } = defineProps<{ pair: AnyBorrowVaultPair | AccountBorrowPosition }>()
 
@@ -20,18 +21,9 @@ const isRamping = computed(() =>
   hasRampConfig.value && isLiquidationLTVRamping(pair as AnyBorrowVaultPair),
 )
 
-const formatTimeRemaining = (seconds: bigint): string => {
-  const days = Number(seconds) / 86400
-  if (days >= 1) return `${Math.ceil(days)} day${Math.ceil(days) > 1 ? 's' : ''}`
-  const hours = Number(seconds) / 3600
-  if (hours >= 1) return `${Math.ceil(hours)} hour${Math.ceil(hours) > 1 ? 's' : ''}`
-  const minutes = Number(seconds) / 60
-  return `${Math.ceil(minutes)} minute${Math.ceil(minutes) > 1 ? 's' : ''}`
-}
-
 const modal = useModal()
 const { withIntrinsicBorrowApy, withIntrinsicSupplyApy, getIntrinsicApy } = useIntrinsicApy()
-const { getSupplyRewardApy, getBorrowRewardApy, hasSupplyRewards, hasBorrowRewards } = useRewardsApy()
+const { getSupplyRewardApy, getBorrowRewardApy, getLoopingRewardApy, getSupplyRewardCampaigns, getBorrowRewardCampaigns, getLoopingRewardCampaigns, hasSupplyRewards, hasBorrowRewards, hasLoopingRewards } = useRewardsApy()
 const { borrowList } = useVaults()
 
 const borrowCount = computed(() => {
@@ -53,16 +45,21 @@ const borrowApyWithRewards = computed(() => withIntrinsicBorrowApy(
   pair.borrow.asset.address,
 ) - borrowRewardAPY.value)
 
+const loopingRewardAPY = computed(() => getLoopingRewardApy(pair.borrow.address, pair.collateral.address))
 const maxMultiplier = computed(() => getMaxMultiplier(pair.borrowLTV))
-const netApy = computed(() => supplyApyWithRewards.value - borrowApyWithRewards.value)
+const netApy = computed(() => supplyApyWithRewards.value - borrowApyWithRewards.value + loopingRewardAPY.value)
 const maxRoe = computed(() =>
-  getMaxRoe(maxMultiplier.value, supplyApyWithRewards.value, borrowApyWithRewards.value),
+  getMaxRoe(maxMultiplier.value, supplyApyWithRewards.value, borrowApyWithRewards.value, loopingRewardAPY.value),
 )
 
 const baseSupplyApy = computed(() => nanoToValue(pair.collateral.interestRateInfo.supplyAPY, 25))
 const baseBorrowApy = computed(() => nanoToValue(pair.borrow.interestRateInfo.borrowAPY, 25))
 const intrinsicSupplyApy = computed(() => getIntrinsicApy(pair.collateral.asset.address))
 const intrinsicBorrowApy = computed(() => getIntrinsicApy(pair.borrow.asset.address))
+
+const supplyCampaignsForModal = computed(() => getSupplyRewardCampaigns(pair.collateral.address))
+const borrowCampaignsForModal = computed(() => getBorrowRewardCampaigns(pair.borrow.address, pair.collateral.address))
+const loopingCampaignsForModal = computed(() => getLoopingRewardCampaigns(pair.borrow.address, pair.collateral.address))
 
 const priceInvert = usePriceInvert(
   () => pair.collateral.asset.symbol,
@@ -90,6 +87,10 @@ const onNetApyInfoIconClick = () => {
       intrinsicBorrowAPY: intrinsicBorrowApy.value,
       supplyRewardAPY: collateralRewardAPY.value || null,
       borrowRewardAPY: borrowRewardAPY.value || null,
+      loopingRewardAPY: loopingRewardAPY.value || null,
+      supplyCampaigns: supplyCampaignsForModal.value,
+      borrowCampaigns: borrowCampaignsForModal.value,
+      loopingCampaigns: loopingCampaignsForModal.value,
     },
   })
 }
@@ -102,7 +103,15 @@ const onMaxRoeInfoIconClick = () => {
       supplyAPY: supplyApyWithRewards.value,
       borrowAPY: borrowApyWithRewards.value,
       borrowLTV: nanoToValue(pair.borrowLTV, 2),
+      borrowVaultAddress: pair.borrow.address,
+      collateralAddress: pair.collateral.address,
     },
+  })
+}
+
+const onRampDownInfoIconClick = (event: MouseEvent, pair: LTVRampConfig) => {
+  modal.open(VaultRampDownModal, {
+    props: pair,
   })
 }
 </script>
@@ -117,10 +126,10 @@ const onMaxRoeInfoIconClick = () => {
         v-if="isDeprecated"
         class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
       >
-        <div class="flex items-start gap-8">
+        <div class="flex items-center gap-8">
           <SvgIcon
             name="warning"
-            class="!w-20 !h-20 flex-shrink-0 mt-2"
+            class="!w-20 !h-20 flex-shrink-0"
           />
           <p class="text-p3 text-warning-500">
             One or more vaults in this pair have been deprecated.
@@ -131,10 +140,10 @@ const onMaxRoeInfoIconClick = () => {
         v-if="isRestricted"
         class="w-full rounded-12 p-16 bg-warning-100 text-warning-500"
       >
-        <div class="flex items-start gap-8">
+        <div class="flex items-center gap-8">
           <SvgIcon
             name="warning"
-            class="!w-20 !h-20 flex-shrink-0 mt-2"
+            class="!w-20 !h-20 flex-shrink-0"
           />
           <p class="text-p3 text-warning-500">
             This vault is not available in your region.
@@ -181,7 +190,7 @@ const onMaxRoeInfoIconClick = () => {
         </template>
         <span class="flex items-center gap-4">
           <SvgIcon
-            v-if="hasSupplyRewards(pair.collateral.address) || hasBorrowRewards(pair.borrow.address, pair.collateral.address)"
+            v-if="hasSupplyRewards(pair.collateral.address) || hasBorrowRewards(pair.borrow.address, pair.collateral.address) || hasLoopingRewards(pair.borrow.address, pair.collateral.address)"
             class="!w-20 !h-20 text-accent-500 cursor-pointer"
             name="sparks"
             @click="onNetApyInfoIconClick"
@@ -204,7 +213,7 @@ const onMaxRoeInfoIconClick = () => {
         </template>
         <span class="flex items-center gap-4">
           <SvgIcon
-            v-if="hasSupplyRewards(pair.collateral.address) || hasBorrowRewards(pair.borrow.address, pair.collateral.address)"
+            v-if="hasSupplyRewards(pair.collateral.address) || hasBorrowRewards(pair.borrow.address, pair.collateral.address) || hasLoopingRewards(pair.borrow.address, pair.collateral.address)"
             class="!w-20 !h-20 text-accent-500 cursor-pointer"
             name="sparks"
             @click="onMaxRoeInfoIconClick"
@@ -221,28 +230,28 @@ const onMaxRoeInfoIconClick = () => {
         label="Max LTV"
         :value="`${formatNumber(nanoToValue(pair.borrowLTV, 2), 2)}%`"
       />
-      <VaultOverviewLabelValue
-        label="Liquidation LTV"
-      >
-        <div class="flex items-center gap-4">
+      <VaultOverviewLabelValue>
+        <template #label>
+          <span class="flex items-center gap-4">
+            Liquidation LTV
+            <SvgIcon
+              v-if="isRamping"
+              class="!w-20 !h-20 text-content-muted cursor-pointer hover:text-content-secondary"
+              name="info-circle"
+              @click.stop.prevent="onRampDownInfoIconClick($event, pair as AnyBorrowVaultPair)"
+            />
+          </span>
+        </template>
+        <span class="flex items-center gap-4">
           <SvgIcon
             v-if="isRamping"
             name="arrow-top-right"
-            class="!w-14 !h-14 text-warning-500 shrink-0 rotate-180"
+            class="!w-14 !h-14 text-warning-500 shrink-0 rotate-180 cursor-pointer"
             title="Liquidation LTV ramping down"
+            @click.stop.prevent="onRampDownInfoIconClick($event, pair as AnyBorrowVaultPair)"
           />
-          <span>{{ `${formatNumber(nanoToValue(currentLiquidationLTV, 2), 2)}%` }}</span>
-          <span
-            v-if="isRamping"
-            @click.stop.prevent
-          >
-            <UiFootnote
-              title="LTV Ramping"
-              :text="`The Liquidation LTV for this pair is being reduced. Target: ${formatNumber(nanoToValue(pair.liquidationLTV, 2), 2)}%. Time remaining: ${formatTimeRemaining(getRampTimeRemaining(pair as AnyBorrowVaultPair))}.`"
-              class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
-            />
-          </span>
-        </div>
+          {{ `${formatNumber(nanoToValue(currentLiquidationLTV, 2), 2)}%` }}
+        </span>
       </VaultOverviewLabelValue>
     </div>
   </div>

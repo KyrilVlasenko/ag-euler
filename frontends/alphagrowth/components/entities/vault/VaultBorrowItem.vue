@@ -7,14 +7,23 @@ import { getUtilisationWarning, getBorrowCapWarning } from '~/composables/useVau
 import { formatAssetValue } from '~/services/pricing/priceProvider'
 import { getMaxMultiplier, getMaxRoe } from '~/utils/leverage'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
-import { isVaultFeatured, getEntitiesByVault } from '~/utils/eulerLabelsUtils'
+import { isVaultFeatured, isVaultKeyring, getEntitiesByVault } from '~/utils/eulerLabelsUtils'
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { isAnyVaultBlockedByCountry, isVaultRestrictedByCountry } from '~/composables/useGeoBlock'
 import { useModal } from '~/components/ui/composables/useModal'
-import { VaultBorrowApyModal, VaultMaxRoeModal } from '#components'
+import { VaultBorrowApyModal, VaultMaxRoeModal, VaultNetApyPairModal } from '#components'
 
 const { pair } = defineProps<{ pair: AnyBorrowVaultPair }>()
 const { enableEntityBranding } = useDeployConfig()
+const { isVaultGovernorVerified } = useVaults()
+
+const isAnyGovernorUnverified = computed(() => {
+  const borrowUnverified = !isVaultGovernorVerified(pair.borrow)
+  const collateralUnverified = 'governorAdmin' in pair.collateral
+    ? !isVaultGovernorVerified(pair.collateral as Vault)
+    : false
+  return borrowUnverified || collateralUnverified
+})
 
 const entityDisplay = computed(() => {
   const borrowEntities = getEntitiesByVault(pair.borrow)
@@ -43,7 +52,7 @@ const entityDisplay = computed(() => {
 
 const { withIntrinsicBorrowApy, withIntrinsicSupplyApy, getIntrinsicApy, getIntrinsicApyInfo }
   = useIntrinsicApy()
-const { getBorrowRewardApy, getSupplyRewardApy, hasSupplyRewards, hasBorrowRewards, getBorrowRewardCampaigns } = useRewardsApy()
+const { getBorrowRewardApy, getSupplyRewardApy, getLoopingRewardApy, hasSupplyRewards, hasBorrowRewards, hasLoopingRewards, getBorrowRewardCampaigns, getSupplyRewardCampaigns, getLoopingRewardCampaigns } = useRewardsApy()
 const modal = useModal()
 
 const collateralProduct = useEulerProductOfVault(
@@ -51,6 +60,10 @@ const collateralProduct = useEulerProductOfVault(
 )
 const borrowProduct = useEulerProductOfVault(
   computed(() => pair.borrow.address),
+)
+
+const isAnyGovernanceLimited = computed(() =>
+  (collateralProduct.isGovernanceLimited || borrowProduct.isGovernanceLimited) && !isAnyGovernorUnverified.value,
 )
 
 const isEscrowCollateral = computed(
@@ -80,6 +93,7 @@ const isPairEffectivelyBlocked = computed(() => {
 })
 
 const isFeatured = computed(() => isVaultFeatured(pair.collateral.address) || isVaultFeatured(pair.borrow.address))
+const isKeyring = computed(() => isVaultKeyring(pair.collateral.address) || isVaultKeyring(pair.borrow.address))
 
 const isAnyDeprecated = computed(() => {
   const collateralAddr = getAddress(pair.collateral.address)
@@ -107,8 +121,14 @@ const borrowRewardsAPY = computed(() =>
 const supplyRewardsAPY = computed(() =>
   getSupplyRewardApy(pair.collateral.address),
 )
-const hasRewards = computed(() =>
-  hasSupplyRewards(pair.collateral.address) || hasBorrowRewards(pair.borrow.address, pair.collateral.address),
+const loopingRewardsAPY = computed(() =>
+  getLoopingRewardApy(pair.borrow.address, pair.collateral.address),
+)
+const hasBorrowApyRewards = computed(() =>
+  hasBorrowRewards(pair.borrow.address, pair.collateral.address),
+)
+const hasAnyRewards = computed(() =>
+  hasSupplyRewards(pair.collateral.address) || hasBorrowApyRewards.value || hasLoopingRewards(pair.borrow.address, pair.collateral.address),
 )
 const supplyApy = computed(() => {
   const interestRateInfo
@@ -134,10 +154,10 @@ const borrowApyWithRewards = computed(
 )
 const maxMultiplier = computed(() => getMaxMultiplier(pair.borrowLTV))
 const netApy = computed(
-  () => supplyApyWithRewards.value - borrowApyWithRewards.value,
+  () => supplyApyWithRewards.value - borrowApyWithRewards.value + loopingRewardsAPY.value,
 )
 const maxRoe = computed(() =>
-  getMaxRoe(maxMultiplier.value, supplyApyWithRewards.value, borrowApyWithRewards.value),
+  getMaxRoe(maxMultiplier.value, supplyApyWithRewards.value, borrowApyWithRewards.value, loopingRewardsAPY.value),
 )
 const maxLTV = computed(() => formatNumber(nanoToValue(pair.borrowLTV, 2), 2))
 const utilization = computed(() => getVaultUtilization(pair.borrow))
@@ -165,6 +185,29 @@ const onBorrowInfoIconClick = (event: MouseEvent) => {
   })
 }
 
+const onNetApyInfoIconClick = (event: MouseEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+  const baseSupply = 'interestRateInfo' in pair.collateral
+    ? nanoToValue(pair.collateral.interestRateInfo.supplyAPY, 25)
+    : 0
+  const baseBorrow = nanoToValue(pair.borrow.interestRateInfo.borrowAPY, 25)
+  modal.open(VaultNetApyPairModal, {
+    props: {
+      supplyAPY: baseSupply,
+      borrowAPY: baseBorrow,
+      intrinsicSupplyAPY: getIntrinsicApy(pair.collateral.asset.address),
+      intrinsicBorrowAPY: getIntrinsicApy(pair.borrow.asset.address),
+      supplyRewardAPY: supplyRewardsAPY.value || null,
+      borrowRewardAPY: borrowRewardsAPY.value || null,
+      loopingRewardAPY: loopingRewardsAPY.value || null,
+      supplyCampaigns: getSupplyRewardCampaigns(pair.collateral.address),
+      borrowCampaigns: getBorrowRewardCampaigns(pair.borrow.address, pair.collateral.address),
+      loopingCampaigns: getLoopingRewardCampaigns(pair.borrow.address, pair.collateral.address),
+    },
+  })
+}
+
 const onMaxRoeInfoIconClick = (event: MouseEvent) => {
   event.preventDefault()
   event.stopPropagation()
@@ -175,13 +218,18 @@ const onMaxRoeInfoIconClick = (event: MouseEvent) => {
       supplyAPY: supplyApyWithRewards.value,
       borrowAPY: borrowApyWithRewards.value,
       borrowLTV: nanoToValue(pair.borrowLTV, 2),
+      borrowVaultAddress: pair.borrow.address,
+      collateralAddress: pair.collateral.address,
     },
   })
 }
 
-const linkPath = computed(
-  () => `/borrow/${pair.collateral.address}/${pair.borrow.address}`,
-)
+const route = useRoute()
+
+const linkPath = computed(() => ({
+  path: `/borrow/${pair.collateral.address}/${pair.borrow.address}`,
+  query: { network: route.query.network },
+}))
 </script>
 
 <template>
@@ -192,7 +240,7 @@ const linkPath = computed(
       enableEntityBranding ? '' : 'grid-cols-5',
       (isGeoBlocked || isPairEffectivelyBlocked) ? 'opacity-50' : '',
     ]"
-    :style="enableEntityBranding ? { gridTemplateColumns: '1.5fr repeat(5, 1fr)' } : undefined"
+    :style="enableEntityBranding ? { gridTemplateColumns: 'repeat(6, 1fr)' } : undefined"
   >
     <!-- Header: contents on desktop (children become grid items), flex on mobile -->
     <div class="contents mobile:!flex mobile:py-16 mobile:px-16 mobile:pb-12 mobile:border-b mobile:border-line-subtle">
@@ -203,6 +251,7 @@ const linkPath = computed(
         <AssetAvatar
           :asset="[pair.collateral.asset, pair.borrow.asset]"
           size="40"
+          :increased-spacing="true"
         />
         <div class="flex-grow ml-12">
           <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-8">
@@ -221,6 +270,7 @@ const linkPath = computed(
               />
               Featured
             </span>
+            <KeyringBadge v-if="isKeyring" />
             <span
               v-if="isGeoBlocked"
               class="inline-flex items-center gap-4 rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5"
@@ -265,14 +315,14 @@ const linkPath = computed(
         <div class="text-content-tertiary text-p3 mb-4 text-right flex items-center gap-4">
           Borrow APY
           <SvgIcon
-            class="!w-16 !h-16 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+            class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
             name="info-circle"
             @click="onBorrowInfoIconClick"
           />
         </div>
         <div class="text-p2 flex items-center text-accent-600 font-semibold">
           <SvgIcon
-            v-if="hasRewards"
+            v-if="hasBorrowApyRewards"
             class="!w-20 !h-20 text-accent-500 mr-4 cursor-pointer"
             name="sparks"
             @click="onBorrowInfoIconClick"
@@ -283,12 +333,18 @@ const linkPath = computed(
           <div class="text-content-tertiary text-p3 mb-4 text-right flex items-center gap-4">
             Max ROE
             <SvgIcon
-              class="!w-16 !h-16 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+              class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
               name="info-circle"
               @click="onMaxRoeInfoIconClick"
             />
           </div>
-          <div class="text-p2 text-accent-600 font-semibold">
+          <div class="text-p2 text-accent-600 font-semibold flex items-center">
+            <SvgIcon
+              v-if="hasAnyRewards"
+              class="!w-20 !h-20 text-accent-500 mr-4 cursor-pointer"
+              name="sparks"
+              @click="onMaxRoeInfoIconClick"
+            />
             {{ formatNumber(maxRoe, 2, 2) }}%
           </div>
         </div>
@@ -297,12 +353,18 @@ const linkPath = computed(
         <div class="text-content-tertiary text-p3 mb-4 text-right flex items-center gap-4">
           Max ROE
           <SvgIcon
-            class="!w-16 !h-16 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+            class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
             name="info-circle"
             @click="onMaxRoeInfoIconClick"
           />
         </div>
-        <div class="text-p2 text-accent-600 font-semibold">
+        <div class="text-p2 text-accent-600 font-semibold flex items-center">
+          <SvgIcon
+            v-if="hasAnyRewards"
+            class="!w-20 !h-20 text-accent-500 mr-4 cursor-pointer"
+            name="sparks"
+            @click="onMaxRoeInfoIconClick"
+          />
           {{ formatNumber(maxRoe, 2, 2) }}%
         </div>
       </div>
@@ -319,13 +381,25 @@ const linkPath = computed(
       >
         <div class="text-content-tertiary text-p3 mb-4">Risk manager</div>
         <div
-          v-if="entityDisplay.name"
+          v-if="isAnyGovernorUnverified"
+          class="flex gap-8 items-center py-4 px-8 rounded-8 bg-error-100 text-error-500 text-p2 w-fit"
+        >
+          <SvgIcon
+            name="warning"
+            class="!w-16 !h-16"
+          />
+          Unknown
+        </div>
+        <div
+          v-else-if="entityDisplay.name"
           class="flex items-center gap-6"
+          :class="{ 'opacity-20': isAnyGovernanceLimited }"
         >
           <BaseAvatar
             class="icon--20"
             :label="entityDisplay.name"
             :src="entityDisplay.logos"
+            :increased-spacing="true"
           />
           <span class="text-p2 text-content-primary truncate">{{ entityDisplay.name }}</span>
         </div>
@@ -350,8 +424,21 @@ const linkPath = computed(
         </div>
       </div>
       <div class="py-12 pb-12 text-center mobile:!p-0">
-        <div class="text-content-tertiary text-p3 mb-4">Net APY</div>
-        <div class="text-p2 text-content-primary">
+        <div class="text-content-tertiary text-p3 mb-4 flex items-center justify-center gap-4">
+          Net APY
+          <SvgIcon
+            class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+            name="info-circle"
+            @click="onNetApyInfoIconClick"
+          />
+        </div>
+        <div class="text-p2 text-content-primary flex items-center justify-center">
+          <SvgIcon
+            v-if="hasAnyRewards"
+            class="!w-20 !h-20 text-accent-500 mr-4 cursor-pointer"
+            name="sparks"
+            @click="onNetApyInfoIconClick"
+          />
           {{ formatNumber(netApy, 2, 2) }}%
         </div>
       </div>
@@ -394,14 +481,29 @@ const linkPath = computed(
           <div class="text-content-tertiary text-p3">Risk manager</div>
         </div>
         <div class="flex gap-8 justify-end items-center text-right flex-1">
-          <template v-if="entityDisplay.name">
+          <div
+            v-if="isAnyGovernorUnverified"
+            class="flex gap-8 items-center py-4 px-8 rounded-8 bg-error-100 text-error-500 text-p2 w-fit"
+          >
+            <SvgIcon
+              name="warning"
+              class="!w-16 !h-16"
+            />
+            Unknown
+          </div>
+          <div
+            v-else-if="entityDisplay.name"
+            class="flex items-center gap-8"
+            :class="{ 'opacity-20': isAnyGovernanceLimited }"
+          >
             <BaseAvatar
               class="icon--20"
               :label="entityDisplay.name"
               :src="entityDisplay.logos"
+              :increased-spacing="true"
             />
             <span class="text-p2 text-content-primary truncate">{{ entityDisplay.name }}</span>
-          </template>
+          </div>
           <div
             v-else
             class="text-p2 text-content-primary"
@@ -420,9 +522,22 @@ const linkPath = computed(
       </div>
       <div class="flex w-full justify-between">
         <div class="flex-1">
-          <div class="text-content-tertiary text-p3">Net APY</div>
+          <div class="text-content-tertiary text-p3 flex items-center gap-4">
+            Net APY
+            <SvgIcon
+              class="!w-16 !h-16 shrink-0 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+              name="info-circle"
+              @click="onNetApyInfoIconClick"
+            />
+          </div>
         </div>
         <div class="flex gap-8 justify-end items-center text-right flex-1">
+          <SvgIcon
+            v-if="hasAnyRewards"
+            class="!w-20 !h-20 text-accent-500 cursor-pointer"
+            name="sparks"
+            @click="onNetApyInfoIconClick"
+          />
           <div class="text-p2 text-content-primary">
             {{ formatNumber(netApy, 2, 2) }}%
           </div>

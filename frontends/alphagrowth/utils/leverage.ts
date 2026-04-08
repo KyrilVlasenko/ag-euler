@@ -25,25 +25,31 @@ export const getMaxMultiplier = (borrowLTV: bigint): number => {
 
 /**
  * Compute the maximum Return on Equity for a leveraged position.
- * Formula: supplyApy + (multiplier - 1) * (supplyApy - borrowApy)
+ * Formula: supplyApy + (multiplier - 1) * (supplyApy - borrowApy) + loopingRewardApr
+ *
+ * Looping rewards are added flat (not scaled by leverage) because they are
+ * based on net liquidity which stays constant regardless of leverage.
  *
  * @param maxMultiplier - from getMaxMultiplier()
  * @param supplyApy - supply APY including rewards (%)
  * @param borrowApy - borrow APY including rewards (%)
+ * @param loopingRewardApr - flat looping incentive APR (%), defaults to 0
  * @returns max ROE as a percentage
  */
 export const getMaxRoe = (
   maxMultiplier: number,
   supplyApy: number,
   borrowApy: number,
+  loopingRewardApr: number = 0,
 ): number => {
   const netApy = supplyApy - borrowApy
   if (
     !Number.isFinite(maxMultiplier)
     || !Number.isFinite(supplyApy)
     || !Number.isFinite(netApy)
+    || !Number.isFinite(loopingRewardApr)
   ) {
     return 0
   }
-  return supplyApy + (maxMultiplier - 1) * netApy
+  return supplyApy + (maxMultiplier - 1) * netApy + loopingRewardApr
 }

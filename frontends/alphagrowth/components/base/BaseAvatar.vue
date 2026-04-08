@@ -11,7 +11,12 @@ const fallbackRedirects = reactive(new Map<string, string>())
 defineOptions({
   inheritAttrs: false,
 })
-const { src, fallbackSrc, label } = defineProps<{ src?: string | string[], fallbackSrc?: string | string[], label?: string | string[] }>()
+const { src, fallbackSrc, label, increasedSpacing = false } = defineProps<{
+  src?: string | string[]
+  fallbackSrc?: string | string[]
+  label?: string | string[]
+  increasedSpacing?: boolean
+}>()
 const images = computed(() => {
   const srcs = !src || typeof src === 'string' ? [src || ''] : [...src]
   const fallbacks = !fallbackSrc || typeof fallbackSrc === 'string' ? [fallbackSrc || ''] : [...fallbackSrc]
@@ -24,7 +29,7 @@ const images = computed(() => {
       return { label: labels[index], src: effectiveSrc, state: { isReady: true } }
     }
 
-    const state = reactive(useImage({ src: effectiveSrc }))
+    const state = reactive(useImage({ src: effectiveSrc, referrerPolicy: 'no-referrer' }))
     watch(() => state.isReady, (ready) => {
       if (ready && effectiveSrc) loadedImages.add(effectiveSrc)
     })
@@ -48,17 +53,29 @@ const images = computed(() => {
       v-for="(image, idx) in images"
       :key="idx"
     >
-      <div
+      <img
         v-if="image.state.isReady"
-        class="w-24 h-24 flex items-center justify-center overflow-hidden rounded-full bg-center bg-cover flex-shrink-0 [&.icon--16]:!w-16 [&.icon--16]:!h-16 [&.icon--18]:!w-18 [&.icon--18]:!h-18 [&.icon--20]:!w-20 [&.icon--20]:!h-20 [&.icon--20]:text-[8px] [&.icon--24]:!w-24 [&.icon--24]:!h-24 [&.icon--32]:!w-32 [&.icon--32]:!h-32 [&.icon--36]:!w-36 [&.icon--36]:!h-36 [&.icon--38]:!w-38 [&.icon--38]:!h-38 [&.icon--40]:!w-40 [&.icon--40]:!h-40 [&.icon--46]:!w-46 [&.icon--46]:!h-46 [&.icon--46]:text-[16px] [&:not(:first-child)]:-ml-8 [&.icon--38:not(:first-child)]:-ml-18 [&.icon--40:not(:first-child)]:-ml-20 [&.icon--46:not(:first-child)]:-ml-18"
+        class="w-24 h-24 flex items-center justify-center overflow-hidden rounded-full object-cover object-center flex-shrink-0 [&.icon--16]:!w-16 [&.icon--16]:!h-16 [&.icon--18]:!w-18 [&.icon--18]:!h-18 [&.icon--20]:!w-20 [&.icon--20]:!h-20 [&.icon--20]:text-[8px] [&.icon--24]:!w-24 [&.icon--24]:!h-24 [&.icon--32]:!w-32 [&.icon--32]:!h-32 [&.icon--36]:!w-36 [&.icon--36]:!h-36 [&.icon--38]:!w-38 [&.icon--38]:!h-38 [&.icon--40]:!w-40 [&.icon--40]:!h-40 [&.icon--46]:!w-46 [&.icon--46]:!h-46 [&.icon--46]:text-[16px]"
+        :class="[
+          increasedSpacing
+            ? '[&:not(:first-child)]:-ml-1 [&.icon--38:not(:first-child)]:-ml-9 [&.icon--40:not(:first-child)]:-ml-11 [&.icon--46:not(:first-child)]:-ml-5'
+            : '[&:not(:first-child)]:-ml-5 [&.icon--38:not(:first-child)]:-ml-14 [&.icon--40:not(:first-child)]:-ml-16 [&.icon--46:not(:first-child)]:-ml-12',
+        ]"
         v-bind="$attrs"
-        :style="{ backgroundImage: `url(${image.src})` }"
-      />
+        :src="image.src"
+        :alt="image.label || ''"
+        referrerpolicy="no-referrer"
+      >
       <div
         v-else
-        class="w-24 h-24 flex items-center justify-center font-semibold overflow-hidden rounded-full bg-center bg-cover flex-shrink-0 border border-line-subtle [&.icon--16]:!w-16 [&.icon--16]:!h-16 [&.icon--18]:!w-18 [&.icon--18]:!h-18 [&.icon--20]:!w-20 [&.icon--20]:!h-20 [&.icon--20]:text-[8px] [&.icon--24]:!w-24 [&.icon--24]:!h-24 [&.icon--32]:!w-32 [&.icon--32]:!h-32 [&.icon--36]:!w-36 [&.icon--36]:!h-36 [&.icon--38]:!w-38 [&.icon--38]:!h-38 [&.icon--40]:!w-40 [&.icon--40]:!h-40 [&.icon--46]:!w-46 [&.icon--46]:!h-46 [&.icon--46]:text-[16px] [&:not(:first-child)]:-ml-8 [&.icon--38:not(:first-child)]:-ml-18 [&.icon--40:not(:first-child)]:-ml-20 [&.icon--46:not(:first-child)]:-ml-18"
+        class="w-24 h-24 flex items-center justify-center font-semibold overflow-hidden rounded-full bg-center bg-cover flex-shrink-0 border border-line-subtle [&.icon--16]:!w-16 [&.icon--16]:!h-16 [&.icon--18]:!w-18 [&.icon--18]:!h-18 [&.icon--20]:!w-20 [&.icon--20]:!h-20 [&.icon--20]:text-[8px] [&.icon--24]:!w-24 [&.icon--24]:!h-24 [&.icon--32]:!w-32 [&.icon--32]:!h-32 [&.icon--36]:!w-36 [&.icon--36]:!h-36 [&.icon--38]:!w-38 [&.icon--38]:!h-38 [&.icon--40]:!w-40 [&.icon--40]:!h-40 [&.icon--46]:!w-46 [&.icon--46]:!h-46 [&.icon--46]:text-[16px]"
+        :class="[
+          increasedSpacing
+            ? '[&:not(:first-child)]:-ml-1 [&.icon--38:not(:first-child)]:-ml-9 [&.icon--40:not(:first-child)]:-ml-11 [&.icon--46:not(:first-child)]:-ml-5'
+            : '[&:not(:first-child)]:-ml-5 [&.icon--38:not(:first-child)]:-ml-14 [&.icon--40:not(:first-child)]:-ml-16 [&.icon--46:not(:first-child)]:-ml-12',
+        ]"
         v-bind="$attrs"
-        :style="{ backgroundColor: image.label ? stringToColor(image.label) : 'var(--neutral-300)', color: image.label ? '#ffffff' : 'var(--c-euler-dark-800)' }"
+        :style="{ backgroundColor: image.label ? stringToColor(image.label) : 'var(--neutral-300)', color: image.label ? 'var(--text-inverse)' : 'var(--text-tertiary)' }"
       >
         {{ image.label ? image.label.slice(0, 2) : '?' }}
       </div>

@@ -1,7 +1,7 @@
 import type { Address } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { normalizeAddress } from '~/utils/normalizeAddress'
-import { getPublicClient } from '~/utils/public-client'
+import { isVaultNotExplorable } from '~/utils/eulerLabelsUtils'
 import {
   type Vault,
   type EarnVault,
@@ -10,8 +10,8 @@ import {
   fetchEarnVault,
   fetchEscrowVault,
   fetchSecuritizeVault,
-  fetchVaultFactory,
 } from '~/entities/vault'
+import { fetchVaultFactory } from '~/entities/vault/factory'
 
 // Vault type enum - 3 types (escrow is a category of evk, not a separate type)
 export type VaultType = 'evk' | 'earn' | 'securitize'
@@ -125,7 +125,7 @@ const getStandardEvkVaults = (): Vault[] => {
 
 // Verified EVK vaults (for display in tables) - excludes dynamically fetched unknown vaults
 const getVerifiedEvkVaults = (): Vault[] => {
-  return getEvkVaults().filter(v => v.verified === true)
+  return getEvkVaults().filter(v => v.verified === true && !isVaultNotExplorable(v.address))
 }
 
 // Type checker convenience methods
@@ -200,14 +200,14 @@ const fetchVaultByType = async (address: string, type: VaultType): Promise<AnyVa
  */
 const isInEscrowPerspective = async (address: string): Promise<boolean> => {
   const { eulerPeripheryAddresses } = useEulerAddresses()
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient } = useRpcClient()
 
   if (!eulerPeripheryAddresses.value?.escrowedCollateralPerspective) {
     return false
   }
 
   try {
-    const client = getPublicClient(EVM_PROVIDER_URL)
+    const client = rpcClient.value!
     return await client.readContract({
       address: eulerPeripheryAddresses.value.escrowedCollateralPerspective as Address,
       abi: [{

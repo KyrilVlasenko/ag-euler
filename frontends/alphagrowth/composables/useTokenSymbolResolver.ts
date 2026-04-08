@@ -2,25 +2,24 @@ import type { Address } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { USD_ADDRESS, EUR_ADDRESS, BTC_ADDRESS, ETH_ADDRESS } from '~/entities/constants'
 import { erc20SymbolAbi } from '~/abis/erc20'
-import { getPublicClient } from '~/utils/public-client'
 
 const resolvedSymbols: Ref<Map<string, string>> = shallowRef(new Map())
 const pendingAddresses = new Set<string>()
 const failedAddresses = new Set<string>()
-let cachedProviderUrl: string | null = null
+let cachedRpcUrl: string | null = null
 
 export const useTokenSymbolResolver = () => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
   const { getAll } = useVaultRegistry()
 
   const ensureClient = () => {
-    if (cachedProviderUrl !== EVM_PROVIDER_URL) {
-      cachedProviderUrl = EVM_PROVIDER_URL
+    if (cachedRpcUrl !== rpcUrl.value) {
+      cachedRpcUrl = rpcUrl.value
       resolvedSymbols.value = new Map()
       pendingAddresses.clear()
       failedAddresses.clear()
     }
-    return getPublicClient(EVM_PROVIDER_URL)
+    return rpcClient.value!
   }
 
   const buildKnownSymbols = (): Map<string, string> => {

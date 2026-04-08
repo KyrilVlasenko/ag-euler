@@ -9,17 +9,16 @@ import {
   eulerPerspectiveABI,
   eulerVaultLensABI,
 } from '~/entities/euler/abis'
-import { getPublicClient } from '~/utils/public-client'
 
 export const fetchEscrowVault = async (vaultAddress: string): Promise<Vault> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { rpcUrl } = useRpcClient()
   const { eulerLensAddresses } = useEulerAddresses()
 
   const vault = await fetchVault(vaultAddress)
 
   try {
     const priceInfo = await resolveFullAssetPriceInfo(
-      EVM_PROVIDER_URL,
+      rpcUrl.value,
       eulerLensAddresses.value!.utilsLens,
       vault.asset.address,
     )
@@ -61,7 +60,7 @@ export const fetchEscrowVault = async (vaultAddress: string): Promise<Vault> => 
  * Used for lazy loading optimization - vault info is fetched on-demand.
  */
 export const fetchEscrowAddresses = async (): Promise<string[]> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient } = useRpcClient()
   const { eulerPeripheryAddresses } = useEulerAddresses()
 
   await until(
@@ -72,7 +71,7 @@ export const fetchEscrowAddresses = async (): Promise<string[]> => {
     return []
   }
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
+  const client = rpcClient.value!
 
   try {
     const addresses = await client.readContract({
@@ -93,7 +92,7 @@ export const fetchEscrowVaults = async function* (): AsyncGenerator<
   void,
   unknown
 > {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient, rpcUrl } = useRpcClient()
   const { eulerPeripheryAddresses, eulerLensAddresses, chainId } = useEulerAddresses()
 
   const startChainId = chainId.value
@@ -116,7 +115,7 @@ export const fetchEscrowVaults = async function* (): AsyncGenerator<
     throw new Error('Escrow perspective or vault lens address not loaded yet')
   }
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
+  const client = rpcClient.value!
 
   let verifiedVaults: string[]
   try {
@@ -162,8 +161,8 @@ export const fetchEscrowVaults = async function* (): AsyncGenerator<
     validVaults = await Promise.all(
       validVaults.map(async (vault) => {
         const [assetPriceInfo, unitOfAccountPriceInfo] = await Promise.all([
-          resolveAssetPriceInfo(EVM_PROVIDER_URL, utilsLensAddress, vault.asset.address),
-          resolveUnitOfAccountPriceInfo(EVM_PROVIDER_URL, utilsLensAddress, vault.unitOfAccount),
+          resolveAssetPriceInfo(rpcUrl.value, utilsLensAddress, vault.asset.address),
+          resolveUnitOfAccountPriceInfo(rpcUrl.value, utilsLensAddress, vault.unitOfAccount),
         ])
         return { ...vault, assetPriceInfo, unitOfAccountPriceInfo }
       }),
@@ -178,7 +177,7 @@ export const fetchEscrowVaults = async function* (): AsyncGenerator<
         ) {
           try {
             const priceInfo = await resolveFullAssetPriceInfo(
-              EVM_PROVIDER_URL,
+              rpcUrl.value,
               utilsLensAddress,
               vault.asset.address,
             )

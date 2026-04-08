@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { POLL_INTERVAL_10S_MS } from '~/entities/tuning-constants'
+import { POLL_INTERVAL_60S_MS } from '~/entities/tuning-constants'
 
 const route = useRoute()
 const router = useRouter()
 const { loadEulerConfig, chainId } = useEulerAddresses()
-const { loadVaults, isReady: isVaultsReady, resetVaultsState } = useVaults()
-const { loadTokens } = useTokens()
+const { loadVaults, isReady: isVaultsReady, resetVaultsState, refreshVaults } = useVaults()
+const { loadTokenList, isLoaded: isTokenListLoaded } = useTokenList()
 const { loadLabels } = useEulerLabels()
 const { loadCountry } = useGeoBlock()
 const { updateBalances, resetBalances } = useWallets()
@@ -79,13 +79,20 @@ watch(chainId, () => {
   resetBalances()
   const targetChainId = chainId.value
   const labelsPromise = loadLabels()
-  void loadTokens()
+  void loadTokenList()
   void loadCountry()
   void labelsPromise.then(() => {
     if (chainId.value !== targetChainId) return
     void loadVaults()
   })
 }, { immediate: true })
+
+// Refresh balances when token list finishes loading (includes new DefiLlama tokens)
+watch(isTokenListLoaded, (loaded) => {
+  if (loaded && (isConnected.value || isVaultsReady.value)) {
+    updateBalances()
+  }
+})
 
 watch([isConnected, isVaultsReady], ([val]) => {
   // Clear existing interval before setting a new one
@@ -97,8 +104,9 @@ watch([isConnected, isVaultsReady], ([val]) => {
   if (val && isVaultsReady.value) {
     updateBalances()
     interval = setInterval(async () => {
-      updateBalances()
-    }, POLL_INTERVAL_10S_MS)
+      await updateBalances()
+      refreshVaults()
+    }, POLL_INTERVAL_60S_MS)
   }
 }, { immediate: true })
 
@@ -109,6 +117,11 @@ watch(address, () => {
   }
 })
 
+const { portfolioRefreshCounter } = usePortfolioRefresh()
+watch(portfolioRefreshCounter, () => {
+  updateBalances()
+})
+
 onUnmounted(() => {
   if (interval) {
     clearInterval(interval)
@@ -117,7 +130,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <TheHeader v-if="isHeaderVisible" />
+  <div
+    class="sticky top-0 z-[101]"
+  >
+    <SpyModeBanner />
+    <TheHeader v-if="isHeaderVisible" />
+  </div>
   <main>
     <section
       class="flex justify-center pt-32 mobile:pt-16"

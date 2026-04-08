@@ -9,11 +9,13 @@ import { SwapperMode } from '~/entities/swap'
 import type { TxPlan } from '~/entities/txPlan'
 import { useIntrinsicApy } from '~/composables/useIntrinsicApy'
 import { formatNumber, formatSmartAmount, formatHealthScore } from '~/utils/string-utils'
+import { formatLiquidationBuffer as formatLiqBuffer, calculateRoe } from '~/utils/repayUtils'
 import { nanoToValue } from '~/utils/crypto-utils'
 import { useSwapPageLogic } from '~/composables/useSwapPageLogic'
 
 const route = useRoute()
 const { isConnected, address } = useAccount()
+const { isSpyMode } = useSpyMode()
 const { isPositionsLoaded, isPositionsLoading, getPositionBySubAccountIndex } = useEulerAccount()
 const { buildSwapPlan, buildSameAssetDebtSwapPlan } = useEulerOperations()
 const { withIntrinsicBorrowApy, withIntrinsicSupplyApy } = useIntrinsicApy()
@@ -24,9 +26,11 @@ const positionIndex = usePositionIndex()
 // ── Position & vaults ────────────────────────────────────────────────────
 const position: Ref<AccountBorrowPosition | null> = ref(null)
 
+const pairAssetsLabel = usePositionPairLabel(position)
 const fromVault = computed(() => position.value?.borrow)
 const collateralVault = computed(() => position.value?.collateral)
 const toVault: Ref<Vault | undefined> = ref()
+useOperationGuard(computed(() => [fromVault.value?.address, toVault.value?.address, collateralVault.value?.address].filter(Boolean)))
 
 const { borrowOptions, borrowVaults } = useSwapDebtOptions({
   collateralVault: computed(() => collateralVault.value as Vault | undefined),
@@ -36,6 +40,7 @@ const { borrowOptions, borrowVaults } = useSwapDebtOptions({
 const currentDebt = computed(() => position.value?.borrowed || 0n)
 const balance = computed(() => currentDebt.value)
 const targetVaultAddress = computed(() => typeof route.query.to === 'string' ? route.query.to : '')
+const _hasBorrowSwapOptions = computed(() => borrowVaults.value.length > 0)
 
 const setFromAmountToMax = () => {
   if (!fromVault.value) {
@@ -100,27 +105,6 @@ watchEffect(async () => {
   currentBorrowValueUsd.value = (await getAssetUsdValue(position.value.borrowed, fromVault.value, 'off-chain')) ?? null
 })
 const nextBorrowValueUsd = ref<number | null>(null)
-watchEffect(async () => {
-  if (!quote.value || !toVault.value) {
-    nextBorrowValueUsd.value = null
-    return
-  }
-  nextBorrowValueUsd.value = (await getAssetUsdValue(BigInt(quote.value.amountIn), toVault.value, 'off-chain')) ?? null
-})
-
-const calculateRoe = (
-  supplyUsd: number | null,
-  borrowUsd: number | null,
-  supplyApy: number | null,
-  borrowApy: number | null,
-) => {
-  if (supplyUsd === null || borrowUsd === null || supplyApy === null || borrowApy === null) return null
-  const equity = supplyUsd - borrowUsd
-  if (!Number.isFinite(equity) || equity <= 0) return null
-  const net = supplyUsd * supplyApy - borrowUsd * borrowApy
-  if (!Number.isFinite(net)) return null
-  return net / equity
-}
 
 const roeBefore = computed(() => calculateRoe(supplyValueUsd.value, currentBorrowValueUsd.value, collateralSupplyApy.value, fromBorrowApy.value))
 const roeAfter = computed(() => calculateRoe(supplyValueUsd.value, nextBorrowValueUsd.value, collateralSupplyApy.value, toBorrowApy.value))
@@ -169,12 +153,12 @@ const currentPriceRatio = computed(() => {
 })
 const currentLiquidationPrice = computed(() => {
   if (!currentPriceRatio.value || !currentHealth.value) return null
-  if (currentHealth.value <= 0) return null
+  if (currentHealth.value < 1) return null
   return currentPriceRatio.value / currentHealth.value
 })
 const nextLiquidationPrice = computed(() => {
   if (!priceRatio.value || !nextHealth.value) return null
-  if (nextHealth.value <= 0) return null
+  if (nextHealth.value < 1) return null
   return priceRatio.value / nextHealth.value
 })
 
@@ -279,9 +263,18 @@ const {
   normalizeAddress, clearSimulationError, requestQuote,
 } = swap
 
+// Must be after `swap` destructuring so `quote` is in scope
+watchEffect(async () => {
+  if (!quote.value || !toVault.value) {
+    nextBorrowValueUsd.value = null
+    return
+  }
+  nextBorrowValueUsd.value = (await getAssetUsdValue(BigInt(quote.value.amountIn), toVault.value, 'off-chain')) ?? null
+})
+
 // ── Position loading ─────────────────────────────────────────────────────
 const loadPosition = async () => {
-  if (!isConnected.value) {
+  if (!isConnected.value && !isSpyMode.value) {
     position.value = null
     return
   }
@@ -308,6 +301,14 @@ watch([currentDebt, fromVault], () => {
   }
 })
 
+watch(borrowVaults, (vaults) => {
+  if (!toVault.value) return
+  const existsInOptions = vaults.some(v => normalizeAddress(v.address) === normalizeAddress(toVault.value?.address))
+  if (!existsInOptions) {
+    toVault.value = undefined
+  }
+})
+
 const onToVaultChange = (selectedIndex: number) => {
   clearSimulationError()
   const nextVault = borrowVaults.value[selectedIndex]
@@ -321,15 +322,17 @@ const onToVaultChange = (selectedIndex: number) => {
 <template>
   <div class="flex gap-32">
     <VaultForm
-      title="Debt swap"
+      title="Refinance debt"
+      description="Move your debt to a different vault, potentially for a better rate."
       class="flex flex-col gap-16 w-full"
       :loading="isLoading || isPositionsLoading"
       @submit.prevent="submit"
     >
-      <template v-if="fromVault && toVault">
+      <template v-if="fromVault">
         <VaultLabelsAndAssets
           :vault="fromVault"
           :assets="[fromVault.asset] as VaultAsset[]"
+          :assets-label="pairAssetsLabel"
           size="large"
         />
         <div class="grid gap-16 laptop:grid-cols-[minmax(0,1fr)_360px] laptop:items-start">
@@ -353,7 +356,7 @@ const onToVaultChange = (selectedIndex: number) => {
             />
 
             <SwapRouteSelector
-              v-if="!isSameAsset"
+              v-if="toVault && !isSameAsset"
               :items="swapRouteItems"
               :selected-provider="selectedProvider"
               :status-label="quotesStatusLabel"
@@ -364,6 +367,7 @@ const onToVaultChange = (selectedIndex: number) => {
             />
 
             <AssetInput
+              v-if="toVault"
               v-model="toAmount"
               :desc="toProduct.name"
               label="To"
@@ -371,8 +375,28 @@ const onToVaultChange = (selectedIndex: number) => {
               :vault="toVault"
               :collateral-options="borrowOptions"
               collateral-modal-title="Select debt"
+              collateral-modal-apy-label="Borrow APY"
               :readonly="true"
               @change-collateral="onToVaultChange"
+            />
+            <div
+              v-else
+              class="flex flex-col gap-12 p-16 rounded-16 border bg-[var(--ui-form-field-background)] border-[var(--ui-form-field-border-color)] shadow-[var(--ui-form-field-shadow)] opacity-60"
+            >
+              <div class="flex justify-between text-content-tertiary">
+                <p>To</p>
+              </div>
+              <div class="flex items-center gap-12">
+                <span class="text-h1 text-content-tertiary w-full h-40 flex items-center">0.00</span>
+              </div>
+            </div>
+
+            <UiToast
+              v-if="!toVault && !isLoading && !isPositionsLoading"
+              title="No refinance options"
+              description="There are no other vaults that accept this collateral to swap your debt to."
+              variant="warning"
+              size="compact"
             />
 
             <UiToast
@@ -419,7 +443,10 @@ const onToVaultChange = (selectedIndex: number) => {
               size="compact"
             />
 
-            <div class="flex flex-col gap-8 laptop:col-start-1 laptop:row-start-2">
+            <div
+              v-if="toVault"
+              class="flex flex-col gap-8 laptop:col-start-1 laptop:row-start-2"
+            >
               <VaultFormSubmit
                 :disabled="reviewSwapDisabled"
                 :loading="isSubmitting || isPreparing"
@@ -430,6 +457,7 @@ const onToVaultChange = (selectedIndex: number) => {
           </div>
 
           <VaultFormInfoBlock
+            v-if="toVault"
             :loading="!isSameAsset && isQuoteLoading"
             variant="card"
             class="w-full laptop:max-w-[360px]"
@@ -454,7 +482,7 @@ const onToVaultChange = (selectedIndex: number) => {
               />
             </SummaryRow>
             <SummaryRow
-              label="Liquidation price"
+              label="Liq. price"
               align-top
             >
               <!-- Borrow swap changes the borrow vault, so before/after symbols may differ -->
@@ -482,6 +510,15 @@ const onToVaultChange = (selectedIndex: number) => {
                 </button>
               </p>
             </SummaryRow>
+            <SummaryRow label="Liq. buffer">
+              <SummaryValue
+                :before="formatLiqBuffer(liqPriceInvert.invertValue(currentPriceRatio), liqPriceInvert.invertValue(currentLiquidationPrice))"
+                :after="nextLiquidationPrice !== null && quote
+                  ? formatLiqBuffer(liqPriceInvert.invertValue(priceRatio), liqPriceInvert.invertValue(nextLiquidationPrice))
+                  : undefined"
+                suffix="%"
+              />
+            </SummaryRow>
             <SummaryRow label="LTV">
               <SummaryValue
                 :before="currentLtv !== null ? formatNumber(currentLtv) : undefined"
@@ -495,45 +532,15 @@ const onToVaultChange = (selectedIndex: number) => {
                 :after="nextHealth !== null && quote ? formatHealthScore(nextHealth) : undefined"
               />
             </SummaryRow>
-            <template v-if="!isSameAsset">
-              <SummaryRow
-                label="Swap"
-                align-top
-              >
-                <p class="text-p2 text-right flex flex-col items-end">
-                  <span>{{ swapSummary ? swapSummary.from : '-' }}</span>
-                  <span
-                    v-if="swapSummary"
-                    class="text-content-tertiary text-p3"
-                  >
-                    {{ swapSummary.to }}
-                  </span>
-                </p>
-              </SummaryRow>
-              <SummaryRow label="Price impact">
-                <p class="text-p2">
-                  {{ priceImpact !== null ? `${formatNumber(priceImpact, 2, 2)}%` : '-' }}
-                </p>
-              </SummaryRow>
-              <SummaryRow label="Slippage tolerance">
-                <button
-                  type="button"
-                  class="flex items-center gap-6 text-p2"
-                  @click="openSlippageSettings"
-                >
-                  <span>{{ formatNumber(slippage, 2, 0) }}%</span>
-                  <SvgIcon
-                    name="edit"
-                    class="!w-16 !h-16 text-accent-600"
-                  />
-                </button>
-              </SummaryRow>
-              <SummaryRow label="Routed via">
-                <p class="text-p2 text-right">
-                  {{ routedVia || '-' }}
-                </p>
-              </SummaryRow>
-            </template>
+            <SwapDetailsSummary
+              v-if="!isSameAsset"
+              :input-display="swapSummary?.from ?? null"
+              :output-display="swapSummary?.to ?? null"
+              :price-impact="priceImpact"
+              :slippage="slippage"
+              :routed-via="routedVia"
+              @open-slippage-settings="openSlippageSettings"
+            />
           </VaultFormInfoBlock>
         </div>
       </template>

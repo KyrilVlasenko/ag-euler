@@ -1,13 +1,12 @@
 /* eslint-disable @typescript-eslint/no-dynamic-delete */
 import axios from 'axios'
 import { getAddress } from 'viem'
-import type { EulerLabelPoint } from '~/entities/euler/labels'
+import type { EulerLabelPoint, EulerLabelEarnVaultEntry } from '~/entities/euler/labels'
 import type { EarnVault, Vault } from '~/entities/vault'
 import { safeAssign } from '~/utils/safe-assign'
 import { logWarn } from '~/utils/errorHandling'
 import { CACHE_TTL_5MIN_MS } from '~/entities/tuning-constants'
 import { normalizeAddress } from '~/utils/normalizeAddress'
-import { getParentChainId } from '~/entities/forkChainMap'
 import {
   isLoading,
   loadState,
@@ -18,6 +17,10 @@ import {
   earnVaultBlocks,
   earnVaultRestrictions,
   featuredEarnVaults,
+  deprecatedEarnVaults,
+  earnVaultDescriptions,
+  earnVaultNotices,
+  notExplorableEarnVaults,
   verifiedVaultAddresses,
   oracleAdapters,
   loadingAdapters,
@@ -33,26 +36,12 @@ import {
   applyVaultOverrides,
 } from '~/utils/eulerLabelsUtils'
 
-let _labelsRepo = 'euler-xyz/euler-labels'
-let _labelsRepoBranch = 'master'
-let _oracleChecksRepo = 'euler-xyz/oracle-checks'
-let _isCustomLabelsRepo = false
 let _enableEarnPage = true
 
-const initRepos = () => {
-  const { labelsRepo, labelsRepoBranch, oracleChecksRepo, isCustomLabelsRepo, enableEarnPage } = useDeployConfig()
-  _labelsRepo = labelsRepo
-  _labelsRepoBranch = labelsRepoBranch
-  _oracleChecksRepo = oracleChecksRepo
-  _isCustomLabelsRepo = isCustomLabelsRepo.value
+const initConfig = () => {
+  const { enableEarnPage } = useDeployConfig()
   _enableEarnPage = enableEarnPage
 }
-
-const getLabelsUrl = (chainId: number, file: string) =>
-  `https://raw.githubusercontent.com/${_labelsRepo}/${_labelsRepoBranch}/${getParentChainId(chainId)}/${file}`
-
-const getOracleChecksUrl = (chainId: number, file: string) =>
-  `https://raw.githubusercontent.com/${_oracleChecksRepo}/master/data/${chainId}/${file}`
 
 const loadOracleAdapter = async (chainId: number, oracleAddress: string) => {
   const checksummed = getAddress(oracleAddress)
@@ -68,8 +57,7 @@ const loadOracleAdapter = async (chainId: number, oracleAddress: string) => {
 
   loadingAdapters.add(key)
   try {
-    const url = getOracleChecksUrl(chainId, `adapters/${checksummed}.json`)
-    const res = await axios.get(url)
+    const res = await axios.get('/api/oracle-adapter', { params: { chainId, address: checksummed } })
     const meta = normalizeOracleAdapters([res.data])
     safeAssign(oracleAdapters, meta)
     return oracleAdapters[key]
@@ -90,7 +78,7 @@ const loadOracleAdapters = async (chainId: number, addresses?: string[]) => {
 }
 
 export const useEulerLabels = () => {
-  initRepos()
+  initConfig()
 
   const loadLabels = async (forceRefresh = false) => {
     try {
@@ -119,39 +107,52 @@ export const useEulerLabels = () => {
       Object.keys(oracleAdapters).forEach(key => delete oracleAdapters[key])
       Object.keys(earnVaultBlocks).forEach(key => delete earnVaultBlocks[key])
       Object.keys(earnVaultRestrictions).forEach(key => delete earnVaultRestrictions[key])
+      Object.keys(deprecatedEarnVaults).forEach(key => delete deprecatedEarnVaults[key])
+      Object.keys(earnVaultDescriptions).forEach(key => delete earnVaultDescriptions[key])
+      Object.keys(earnVaultNotices).forEach(key => delete earnVaultNotices[key])
       featuredEarnVaults.clear()
+      notExplorableEarnVaults.clear()
       earnVaults.value = []
       verifiedVaultAddresses.value = []
 
-      const [productRes, entitiesRes, pointsRes] = await Promise.all([
-        axios.get(getLabelsUrl(chainId, 'products.json')),
-        axios.get(getLabelsUrl(chainId, 'entities.json')),
-        axios.get(getLabelsUrl(chainId, 'points.json')),
+      const [productRes, entitiesRes] = await Promise.all([
+        axios.get('/api/labels/products.json', { params: { chainId } }),
+        axios.get('/api/labels/entities.json', { params: { chainId } }),
       ])
 
-      if (_isCustomLabelsRepo) {
-        try {
-          const earnRes = await axios.get(getLabelsUrl(chainId, 'earn-vaults.json'))
-          const earnEntries = earnRes.data as Array<string | { address: string, block?: string[], restricted?: string[], featured?: boolean }>
-          earnVaults.value = earnEntries.map((entry) => {
-            if (typeof entry === 'string') return normalizeAddress(entry)
-            const addr = normalizeAddress(entry.address)
-            if (entry.block?.length) {
-              earnVaultBlocks[addr.toLowerCase()] = entry.block
-            }
-            if (entry.restricted?.length) {
-              earnVaultRestrictions[addr.toLowerCase()] = entry.restricted
-            }
-            if (entry.featured) {
-              featuredEarnVaults.add(addr)
-            }
-            return addr
-          })
-        }
-        catch {
-          if (_enableEarnPage) {
-            logWarn('labels/earn-vaults', `earn-vaults.json not found on ${_labelsRepo}@${_labelsRepoBranch}`)
+      try {
+        const earnRes = await axios.get('/api/labels/earn-vaults.json', { params: { chainId } })
+        const earnEntries = earnRes.data as Array<string | EulerLabelEarnVaultEntry>
+        earnVaults.value = earnEntries.map((entry) => {
+          if (typeof entry === 'string') return normalizeAddress(entry)
+          const addr = normalizeAddress(entry.address)
+          if (entry.block?.length) {
+            earnVaultBlocks[addr.toLowerCase()] = entry.block
           }
+          if (entry.restricted?.length) {
+            earnVaultRestrictions[addr.toLowerCase()] = entry.restricted
+          }
+          if (entry.featured) {
+            featuredEarnVaults.add(addr)
+          }
+          if (entry.deprecated) {
+            deprecatedEarnVaults[addr.toLowerCase()] = entry.deprecationReason ?? ''
+          }
+          if (entry.description) {
+            earnVaultDescriptions[addr.toLowerCase()] = entry.description
+          }
+          if (entry.portfolioNotice) {
+            earnVaultNotices[addr.toLowerCase()] = entry.portfolioNotice
+          }
+          if (entry.notExplorable) {
+            notExplorableEarnVaults.add(addr.toLowerCase())
+          }
+          return addr
+        })
+      }
+      catch {
+        if (_enableEarnPage) {
+          logWarn('labels/earn-vaults', `earn-vaults.json not found for chain ${chainId}`)
         }
       }
 
@@ -161,23 +162,29 @@ export const useEulerLabels = () => {
 
       safeAssign(entities, normalizeEntities(entitiesRes.data))
 
-      const pointsData = pointsRes.data as EulerLabelPoint[]
-      pointsData.forEach((point) => {
-        if (!point.collateralVaults || point.isTurtleClub) {
-          return
-        }
-
-        point.collateralVaults.forEach((vaultAddress) => {
-          const normalized = normalizeAddress(vaultAddress)
-          if (!points[normalized]) {
-            points[normalized] = []
+      try {
+        const pointsRes = await axios.get('/api/labels/points.json', { params: { chainId } })
+        const pointsData = pointsRes.data as EulerLabelPoint[]
+        pointsData.forEach((point) => {
+          if (!point.collateralVaults) {
+            return
           }
-          points[normalized].push({
-            name: point.name,
-            logo: point.logo,
+
+          point.collateralVaults.forEach((vaultAddress) => {
+            const normalized = normalizeAddress(vaultAddress)
+            if (!points[normalized]) {
+              points[normalized] = []
+            }
+            points[normalized].push({
+              name: point.name,
+              logo: point.logo,
+            })
           })
         })
-      })
+      }
+      catch {
+        // points.json is optional — app functions without it
+      }
 
       loadState.chainId = chainId
       loadState.timestamp = Date.now()

@@ -17,9 +17,11 @@ const props = defineProps<{
   balanceLoading?: boolean
   collateralOptions?: CollateralOption[]
   collateralModalTitle?: string
+  collateralModalApyLabel?: string
   readonly?: boolean
-  priceOverride?: number // For vaults without standard price info (e.g., securitize)
+  priceOverride?: number // USD unit price for assets without a vault (e.g., swap-to-deposit)
   swappable?: boolean // When true, asset pill shows dropdown arrow and emits click-asset
+  selectedSource?: 'wallet' | 'saving' // Source indicator chip when multiple collateral options exist
 }>()
 const emits = defineEmits(['input', 'change-collateral', 'click-asset'])
 const model = defineModel<string>({ default: '' })
@@ -27,8 +29,37 @@ const model = defineModel<string>({ default: '' })
 const inputEl = useTemplateRef<HTMLInputElement>('inputEl')
 const modal = useModal()
 const isFocused = ref(false)
+const emitInputTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
+const emitInputDebounced = () => {
+  if (emitInputTimeout.value) {
+    clearTimeout(emitInputTimeout.value)
+  }
+  emitInputTimeout.value = setTimeout(() => {
+    emits('input')
+    emitInputTimeout.value = null
+  }, 250)
+}
 
-const selectedIdx = ref(0)
+const emitInputNow = () => {
+  if (emitInputTimeout.value) {
+    clearTimeout(emitInputTimeout.value)
+    emitInputTimeout.value = null
+  }
+  emits('input')
+}
+
+const getSelectedIdx = () => {
+  if (props.selectedSource && props.collateralOptions?.length) {
+    const idx = props.collateralOptions.findIndex(o => o.type === props.selectedSource)
+    if (idx >= 0) return idx
+  }
+  return 0
+}
+const selectedIdx = ref(getSelectedIdx())
+watch(
+  [() => props.selectedSource, () => props.collateralOptions],
+  () => { selectedIdx.value = getSelectedIdx() },
+)
 const friendlyBalance = computed(() => nanoToValue(props.balance ?? 0n, props.asset?.decimals || 18))
 
 // Auto-advance past disabled options (blocked/restricted vaults)
@@ -48,12 +79,13 @@ watch(() => props.collateralOptions, (options) => {
 const usdUnitPrice = ref<number | null>(null)
 
 watchEffect(async () => {
-  if (!props.vault) {
-    usdUnitPrice.value = null
+  if (props.vault) {
+    const priceInfo = await getAssetUsdPrice(props.vault, 'off-chain')
+    usdUnitPrice.value = priceInfo ? nanoToValue(priceInfo.amountOutMid, 18) : null
     return
   }
-  const priceInfo = await getAssetUsdPrice(props.vault, 'off-chain')
-  usdUnitPrice.value = priceInfo ? nanoToValue(priceInfo.amountOutMid, 18) : null
+
+  usdUnitPrice.value = null
 })
 
 // Display price (synchronous computed — tracks model.value reactively)
@@ -68,7 +100,7 @@ const price = computed(() => {
 const hasPrice = computed(() => price.value !== null)
 const setMax = () => {
   model.value = trimTrailingZeros(formatUnits(props.balance ?? 0n, Number(props.asset.decimals)))
-  emits('input')
+  emitInputNow()
   if (inputEl.value) {
     inputEl.value.value = model.value || ''
   }
@@ -87,8 +119,21 @@ const onInput = (e: Event) => {
   else {
     model.value = value
   }
-  emits('input', e)
+  emitInputDebounced()
 }
+const onBlur = () => {
+  isFocused.value = false
+  if (!props.readonly) {
+    emitInputNow()
+  }
+}
+
+onBeforeUnmount(() => {
+  if (emitInputTimeout.value) {
+    clearTimeout(emitInputTimeout.value)
+    emitInputTimeout.value = null
+  }
+})
 const openChooseCollateralModal = () => {
   if ((props.collateralOptions?.length ?? 0) < 2) {
     return
@@ -100,6 +145,7 @@ const openChooseCollateralModal = () => {
       collateralOptions: props.collateralOptions,
       selected: selectedIdx.value,
       title: props.collateralModalTitle,
+      apyLabel: props.collateralModalApyLabel,
       onSave: (selectedIndex: number) => {
         selectedIdx.value = selectedIndex
         emits('change-collateral', selectedIndex)
@@ -115,13 +161,13 @@ const openChooseCollateralModal = () => {
     class="flex flex-col gap-12 p-16 rounded-16 border transition-all duration-200"
     :class="[
       isFocused
-        ? 'bg-bg-surface border-accent-500 shadow-[0_0_0_3px_rgba(196,155,100,0.15),0_2px_4px_rgba(0,0,0,0.06)]'
+        ? 'bg-bg-surface border-accent-500 shadow-accent-glow'
         : 'bg-[var(--ui-form-field-background)] border-[var(--ui-form-field-border-color)] shadow-[var(--ui-form-field-shadow)]',
     ]"
   >
     <div
       v-if="label || desc"
-      class="flex justify-between text-euler-dark-800"
+      class="flex justify-between text-content-tertiary"
     >
       <p>
         {{ label }}
@@ -138,33 +184,49 @@ const openChooseCollateralModal = () => {
         ref="inputEl"
         v-text-fit
         :value="model"
-        class="text-h1 text-euler-dark-1000 w-full h-40 outline-none placeholder:text-euler-dark-800"
+        class="text-h1 text-euler-dark-1000 w-full h-40 outline-none placeholder:text-content-tertiary"
         type="text"
         placeholder="0.00"
         maxlength="24"
         autocomplete="off"
         step="0.1"
-        :readonly="readonly"
-        :inputmode="readonly ? 'none' : 'decimal'"
+        :readonly="props.readonly"
+        :inputmode="props.readonly ? 'none' : 'decimal'"
         @focus="isFocused = true"
-        @blur="isFocused = false"
+        @blur="onBlur"
         @input="onInput"
       >
 
       <div
-        class="bg-euler-dark-500 text-p3 font-semibold gap-8 flex items-center justify-center px-12 h-36 rounded-[40px] whitespace-nowrap cursor-pointer"
+        class="bg-euler-dark-500 text-p3 font-semibold gap-8 flex items-center justify-center px-12 min-h-36 py-6 rounded-[40px] whitespace-nowrap cursor-pointer"
         @click="swappable ? emits('click-asset') : openChooseCollateralModal()"
       >
         <AssetAvatar
           :asset="asset"
           size="20"
         />
-        {{ asset.symbol }}
-        <SvgIcon
-          v-if="swappable || (collateralOptions?.length ?? 0) > 1"
-          class="text-euler-dark-800 !w-16 !h-16"
-          name="arrow-down"
-        />
+        <div class="flex flex-col items-start">
+          <span class="flex items-center gap-8">
+            {{ asset.symbol }}
+            <SvgIcon
+              v-if="swappable || (collateralOptions?.length ?? 0) > 1"
+              class="text-content-tertiary !w-16 !h-16"
+              name="arrow-down"
+            />
+          </span>
+          <span
+            v-if="selectedSource === 'wallet' && (collateralOptions?.length ?? 0) > 1"
+            class="text-[10px] leading-[12px] text-accent-600"
+          >
+            Wallet
+          </span>
+          <span
+            v-else-if="selectedSource === 'saving' && (collateralOptions?.length ?? 0) > 1"
+            class="text-[10px] leading-[12px] text-yellow-600"
+          >
+            Savings
+          </span>
+        </div>
       </div>
     </div>
     <div

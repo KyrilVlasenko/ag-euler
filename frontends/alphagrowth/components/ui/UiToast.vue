@@ -1,6 +1,7 @@
 <script setup lang="ts">
-export type ToastVariant = 'info' | 'success' | 'warning' | 'error' | 'neutral'
-export type ToastSize = 'normal' | 'compact'
+import type { ToastVariant, ToastSize } from './toast.types'
+
+export type { ToastVariant, ToastSize }
 
 const props = withDefaults(defineProps<{
   variant?: ToastVariant
@@ -13,7 +14,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   variant: 'info',
   size: 'normal',
-  persistent: false,
+  persistent: true,
   duration: 5000,
 })
 
@@ -57,64 +58,50 @@ if (!props.persistent && props.duration > 0) {
       :class="classes"
       class="ui-toast"
     >
-      <div class="ui-toast__card-container">
-        <div class="ui-toast__icon-wrapper">
-          <UiIcon
-            :name="iconName"
-            class="ui-toast__icon"
-          />
-        </div>
-        <div class="ui-toast__content-wrapper">
-          <div
+      <div class="ui-toast__body">
+        <UiIcon
+          :name="iconName"
+          class="ui-toast__icon"
+        />
+        <div class="ui-toast__content">
+          <p
             v-if="title"
-            class="ui-toast__heading-container"
+            class="ui-toast__title"
           >
-            <div class="ui-toast__heading">
-              {{ title }}
-            </div>
-          </div>
-          <div
+            {{ title }}
+          </p>
+          <p
             v-if="description"
-            class="ui-toast__paragraph-container"
+            class="ui-toast__description"
           >
-            <p class="ui-toast__paragraph">
-              {{ description }}
-            </p>
-          </div>
+            {{ description }}
+          </p>
         </div>
         <button
           v-if="!persistent"
-          class="ui-toast__close-button"
+          class="ui-toast__close"
           @click="$emit('close')"
         >
           <UiIcon
-            name="times"
+            name="close"
             class="ui-toast__close-icon"
           />
         </button>
       </div>
       <div
         v-if="hasAction"
-        class="ui-toast__splitter"
-      />
-      <div
-        v-if="hasAction"
-        class="ui-toast__action-container"
+        class="ui-toast__action"
       >
-        <div class="ui-toast__spacer-32" />
-        <div class="ui-toast__spacer-20" />
-        <div class="ui-toast__action-wrapper">
-          <button
-            class="ui-toast__action-button"
-            @click="$emit('action')"
-          >
-            <span class="ui-toast__action-text">{{ actionText }}</span>
-            <UiIcon
-              name="arrow-right"
-              class="ui-toast__action-icon"
-            />
-          </button>
-        </div>
+        <button
+          class="ui-toast__action-button"
+          @click="$emit('action')"
+        >
+          <span>{{ actionText }}</span>
+          <UiIcon
+            name="arrow-right"
+            class="ui-toast__action-icon"
+          />
+        </button>
       </div>
     </div>
   </Transition>
@@ -125,322 +112,149 @@ if (!props.persistent && props.duration > 0) {
   display: flex;
   flex-direction: column;
   width: 100%;
-  background: var(--ui-toast-background-color);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   border: 1px solid;
-  box-shadow: var(--ui-toast-box-shadow);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px);
   overflow: hidden;
 
+  // Variant colors
   &--info {
     border-color: var(--ui-toast-info-border-color);
-
-    .ui-toast__card-container {
-      background: var(--ui-toast-info-background-color);
-    }
-
-    .ui-toast__icon,
-    .ui-toast__heading,
-    .ui-toast__paragraph,
-    .ui-toast__action-text,
-    .ui-toast__action-icon,
-    .ui-toast__close-icon {
-      color: var(--ui-toast-info-text-color);
-    }
-
-    .ui-toast__splitter {
-      background: var(--ui-toast-info-splitter-color);
-    }
-
-    .ui-toast__action-container {
-      background: var(--ui-toast-info-action-background-color);
-    }
+    background: var(--ui-toast-info-background-color);
+    color: var(--ui-toast-info-text-color);
   }
 
   &--success {
     border-color: var(--ui-toast-success-border-color);
-
-    .ui-toast__card-container {
-      background: var(--ui-toast-success-background-color);
-    }
-
-    .ui-toast__icon,
-    .ui-toast__heading,
-    .ui-toast__paragraph,
-    .ui-toast__action-text,
-    .ui-toast__action-icon,
-    .ui-toast__close-icon {
-      color: var(--ui-toast-success-text-color);
-    }
-
-    .ui-toast__splitter {
-      background: var(--ui-toast-success-splitter-color);
-    }
-
-    .ui-toast__action-container {
-      background: var(--ui-toast-success-action-background-color);
-    }
+    background: var(--ui-toast-success-background-color);
+    color: var(--ui-toast-success-text-color);
   }
 
   &--warning {
     border-color: var(--ui-toast-warning-border-color);
-
-    .ui-toast__card-container {
-      background: var(--ui-toast-warning-background-color);
-    }
-
-    .ui-toast__icon {
-      color: var(--ui-toast-warning-text-color);
-    }
-
-    .ui-toast__heading,
-    .ui-toast__paragraph {
-      color: var(--ui-toast-warning-text-color);
-    }
-
-    .ui-toast__action-text,
-    .ui-toast__action-icon,
-    .ui-toast__close-icon {
-      color: var(--ui-toast-info-text-color);
-    }
-
-    .ui-toast__splitter {
-      background: var(--ui-toast-warning-splitter-color);
-    }
-
-    .ui-toast__action-container {
-      background: var(--ui-toast-warning-action-background-color);
-    }
+    background: var(--ui-toast-warning-background-color);
+    color: var(--ui-toast-warning-text-color);
   }
 
   &--error {
     border-color: var(--ui-toast-error-border-color);
-
-    .ui-toast__card-container {
-      background: var(--ui-toast-error-background-color);
-    }
-
-    .ui-toast__icon,
-    .ui-toast__heading,
-    .ui-toast__paragraph {
-      color: var(--ui-toast-error-text-color);
-    }
-
-    .ui-toast__action-text,
-    .ui-toast__action-icon,
-    .ui-toast__close-icon {
-      color: var(--ui-toast-info-text-color);
-    }
-
-    .ui-toast__splitter {
-      background: var(--ui-toast-error-splitter-color);
-    }
-
-    .ui-toast__action-container {
-      background: var(--ui-toast-error-action-background-color);
-    }
+    background: var(--ui-toast-error-background-color);
+    color: var(--ui-toast-error-text-color);
   }
 
   &--neutral {
     border-color: var(--ui-toast-neutral-border-color);
-
-    .ui-toast__card-container {
-      background: var(--ui-toast-neutral-background-color);
-    }
-
-    .ui-toast__icon,
-    .ui-toast__heading,
-    .ui-toast__paragraph,
-    .ui-toast__action-text,
-    .ui-toast__action-icon,
-    .ui-toast__close-icon {
-      color: var(--ui-toast-neutral-text-color);
-    }
-
-    .ui-toast__splitter {
-      background: var(--ui-toast-neutral-splitter-color);
-    }
-
-    .ui-toast__action-container {
-      background: var(--ui-toast-neutral-action-background-color);
-    }
+    background: var(--ui-toast-neutral-background-color);
+    color: var(--ui-toast-neutral-text-color);
   }
 
+  // Size variants
   &--normal {
-    .ui-toast__card-container {
-      padding: 0 20px;
+    .ui-toast__body {
+      padding: 16px;
+      gap: 12px;
     }
 
-    .ui-toast__icon-wrapper {
-      padding: 22px 0;
-    }
-
-    .ui-toast__content-wrapper {
-      padding: 20px 0;
-    }
-
-    .ui-toast__heading {
+    .ui-toast__title {
       font-size: 14px;
-      line-height: 1.4285714285714286em;
+      line-height: 20px;
       font-weight: 600;
     }
 
-    .ui-toast__paragraph {
+    .ui-toast__description {
       font-size: 14px;
-      line-height: 1.4285714285714286em;
-      font-weight: 400;
-    }
-
-    .ui-toast__action-container {
-      padding: 16px 24px 16px 0;
-    }
-
-    .ui-toast__action-text {
-      font-size: 14px;
-      line-height: 1.4285714285714286em;
-      font-weight: 600;
+      line-height: 20px;
     }
 
     .ui-toast__icon {
       width: 20px;
       height: 20px;
-      font-size: 14px;
     }
 
-    .ui-toast__action-icon {
-      width: 20px;
-      height: 20px;
-      font-size: 14px;
+    .ui-toast__action {
+      padding: 12px 16px;
     }
   }
 
   &--compact {
-    .ui-toast__card-container {
-      padding: 0 12px;
+    .ui-toast__body {
+      padding: 12px;
+      gap: 8px;
     }
 
-    .ui-toast__icon-wrapper {
-      padding: 12px 0;
+    .ui-toast__content {
+      gap: 2px;
     }
 
-    .ui-toast__content-wrapper {
-      padding: 12px 0;
-      gap: 4px;
-    }
-
-    .ui-toast__heading {
+    .ui-toast__title {
       font-size: 12px;
-      line-height: 1.3333333333333333em;
+      line-height: 16px;
       font-weight: 600;
     }
 
-    .ui-toast__paragraph {
+    .ui-toast__description {
       font-size: 12px;
-      line-height: 1.3333333333333333em;
-      font-weight: 400;
-    }
-
-    .ui-toast__action-container {
-      padding: 12px 24px 12px 0;
-    }
-
-    .ui-toast__action-text {
-      font-size: 12px;
-      line-height: 1.3333333333333333em;
-      font-weight: 600;
+      line-height: 16px;
     }
 
     .ui-toast__icon {
-      width: 20px;
-      height: 20px;
-      font-size: 14px;
+      width: 16px;
+      height: 16px;
+    }
+
+    .ui-toast__action {
+      padding: 8px 12px;
     }
 
     .ui-toast__action-icon {
-      width: 16px;
-      height: 16px;
-      font-size: 12px;
-    }
-
-    .ui-toast__spacer-32 {
-      width: 24px;
+      width: 14px;
+      height: 14px;
     }
   }
 
-  &__card-container {
+  // Structure
+  &__body {
     display: flex;
-    align-items: stretch;
-    gap: 12px;
-    border-radius: 7px 7px 0 0;
-    position: relative;
-
-    .ui-toast--with-action & {
-      border-radius: 7px 7px 0 0;
-    }
-
-    .ui-toast:not(.ui-toast--with-action) & {
-      border-radius: 7px;
-    }
-  }
-
-  &__icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+    align-items: flex-start;
   }
 
   &__icon {
-    display: block;
+    flex-shrink: 0;
   }
 
-  &__content-wrapper {
+  &__content {
     display: flex;
     flex-direction: column;
     flex: 1;
     min-width: 0;
   }
 
-  &__heading-container {
-    display: flex;
-    align-items: stretch;
-    gap: 12px;
-    padding: 2px 0;
-  }
-
-  &__heading {
+  &__title,
+  &__description {
     margin: 0;
-    font-family: Inter, sans-serif;
     text-align: left;
-    flex: 1;
   }
 
-  &__paragraph-container {
-    display: flex;
-    align-items: stretch;
-    padding: 2px 0;
+  &__description {
+    opacity: 0.8;
   }
 
-  &__paragraph {
-    margin: 0;
-    font-family: Inter, sans-serif;
-    text-align: left;
-    flex: 1;
-  }
-
-  &__close-button {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 4px;
+  &__close {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: currentColor;
+    opacity: 0.5;
+    transition: opacity var(--duration-fast) var(--ease-default);
 
     &:hover {
       opacity: 1;
@@ -450,61 +264,37 @@ if (!props.persistent && props.duration > 0) {
   &__close-icon {
     width: 14px;
     height: 14px;
-    font-size: 12px;
   }
 
-  &__splitter {
-    height: 1px;
-    width: 100%;
-  }
-
-  &__action-container {
+  &__action {
     display: flex;
     align-items: center;
-    border-radius: 0 0 7px 7px;
-  }
-
-  &__spacer-32 {
-    width: 32px;
-    flex-shrink: 0;
-  }
-
-  &__spacer-20 {
-    width: 20px;
-    flex-shrink: 0;
-  }
-
-  &__action-wrapper {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
+    border-top: 1px solid currentColor;
+    border-top-color: inherit;
+    opacity: 0.8;
   }
 
   &__action-button {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     background: none;
     border: none;
     cursor: pointer;
     padding: 0;
-    font-family: Inter, sans-serif;
-    transition: opacity 0.2s ease;
+    color: currentColor;
+    font-size: inherit;
+    font-weight: 600;
+    transition: opacity var(--duration-fast) var(--ease-default);
 
     &:hover {
-      opacity: 0.8;
+      opacity: 0.7;
     }
   }
 
-  &__action-text {
-    margin: 0;
-    text-align: left;
-  }
-
   &__action-icon {
-    display: block;
+    width: 16px;
+    height: 16px;
     flex-shrink: 0;
   }
 }

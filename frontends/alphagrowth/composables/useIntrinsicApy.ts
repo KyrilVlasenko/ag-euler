@@ -2,8 +2,20 @@ import { intrinsicApySources } from '~/entities/custom'
 import type { IntrinsicApyInfo, IntrinsicApyProvider, IntrinsicApyResult } from '~/entities/intrinsic-apy'
 import { EMPTY_INTRINSIC_APY } from '~/entities/intrinsic-apy'
 import { createDefiLlamaProvider } from '~/services/intrinsicApy/defillamaProvider'
-import { createMerklProvider } from '~/services/intrinsicApy/merklProvider'
 import { createPendleProvider } from '~/services/intrinsicApy/pendleProvider'
+import { createSecuritizeProvider } from '~/services/intrinsicApy/securitizeProvider'
+import { createStablewatchProvider } from '~/services/intrinsicApy/stablewatchProvider'
+import { createEtherfiProvider } from '~/services/intrinsicApy/etherfiProvider'
+import { createRenzoProvider } from '~/services/intrinsicApy/renzoProvider'
+import { createMidasProvider } from '~/services/intrinsicApy/midasProvider'
+import { createYoProvider } from '~/services/intrinsicApy/yoProvider'
+import { createSparkProvider } from '~/services/intrinsicApy/sparkProvider'
+import { createPufferProvider } from '~/services/intrinsicApy/pufferProvider'
+import { createTreehouseProvider } from '~/services/intrinsicApy/treehouseProvider'
+import { createOndoProvider } from '~/services/intrinsicApy/ondoProvider'
+import { createBenqiProvider } from '~/services/intrinsicApy/benqiProvider'
+import { createAvantProvider } from '~/services/intrinsicApy/avantProvider'
+import { createMerklProvider } from '~/services/intrinsicApy/merklProvider'
 import { logWarn } from '~/utils/errorHandling'
 import { CACHE_TTL_5MIN_MS } from '~/entities/tuning-constants'
 
@@ -17,8 +29,20 @@ const normalize = (value?: string) => value?.toLowerCase() || ''
 
 const providers: IntrinsicApyProvider[] = [
   createDefiLlamaProvider(intrinsicApySources),
-  createMerklProvider(intrinsicApySources),
   createPendleProvider(intrinsicApySources),
+  createSecuritizeProvider(intrinsicApySources),
+  createStablewatchProvider(intrinsicApySources),
+  createEtherfiProvider(intrinsicApySources),
+  createRenzoProvider(intrinsicApySources),
+  createMidasProvider(intrinsicApySources),
+  createYoProvider(intrinsicApySources),
+  createSparkProvider(intrinsicApySources),
+  createPufferProvider(intrinsicApySources),
+  createTreehouseProvider(intrinsicApySources),
+  createOndoProvider(intrinsicApySources),
+  createBenqiProvider(intrinsicApySources),
+  createAvantProvider(intrinsicApySources),
+  createMerklProvider(intrinsicApySources),
 ]
 
 const mergeResults = (allResults: IntrinsicApyResult[]): Record<string, IntrinsicApyInfo> => {

@@ -5,22 +5,33 @@ import { useEulerProductOfVault } from '~/composables/useEulerLabels'
 import { isAnyVaultBlockedByCountry } from '~/composables/useGeoBlock'
 
 const { vault, assets, size, assetsLabel, pairVault } = defineProps<{
-  vault: Vault | EarnVault | SecuritizeVault
+  vault?: Vault | EarnVault | SecuritizeVault
   assets: VaultAsset[]
   size?: 'large'
   assetsLabel?: string
   pairVault?: Vault
 }>()
-const vaultAddress = computed(() => getAddress(vault.address))
+const normalizeAddress = (address?: string) => {
+  if (!address) return ''
+  try {
+    return getAddress(address)
+  }
+  catch {
+    return ''
+  }
+}
+
+const vaultAddress = computed(() => normalizeAddress(vault?.address))
 const product = useEulerProductOfVault(vaultAddress)
 const displayName = computed(() => {
+  if (!vault) return ''
   if ('vaultCategory' in vault && vault.vaultCategory === 'escrow') {
     return 'Escrowed collateral'
   }
   return product.name || vault.name
 })
 
-const pairVaultAddress = computed(() => pairVault ? getAddress(pairVault.address) : '')
+const pairVaultAddress = computed(() => pairVault ? normalizeAddress(pairVault.address) : '')
 const pairProduct = useEulerProductOfVault(pairVaultAddress)
 
 const isVaultDeprecated = computed(() => {
@@ -34,23 +45,27 @@ const isPairVaultDeprecated = computed(() => {
 })
 const isDeprecated = computed(() => isVaultDeprecated.value || isPairVaultDeprecated.value)
 const isRestricted = computed(() => {
-  const addresses = [vault.address]
-  if (pairVault) addresses.push(pairVault.address)
+  const addresses: string[] = []
+  if (vault?.address) addresses.push(vault.address)
+  if (pairVault?.address) addresses.push(pairVault.address)
+  if (!addresses.length) return false
   return isAnyVaultBlockedByCountry(...addresses)
 })
 
-const getVaultLabel = (v: Vault | EarnVault | SecuritizeVault) => {
+const getVaultLabel = (v?: Vault | EarnVault | SecuritizeVault) => {
+  if (!v) return ''
   if ('vaultCategory' in v && v.vaultCategory === 'escrow') {
     return 'Escrowed collateral'
   }
-  const addr = getAddress(v.address)
+  const addr = normalizeAddress(v.address)
   if (addr === vaultAddress.value) {
-    return product.name || vault.name
+    return product.name || vault?.name || v.name
   }
   return pairProduct.name || v.name
 }
 
 const displayLabel = computed(() => {
+  if (!vault) return ''
   const collateralLabel = getVaultLabel(vault)
 
   if (!pairVault) {
@@ -71,12 +86,14 @@ const displayAssetsLabel = computed(() => assetsLabel || assets.map(asset => ass
 
 <template>
   <div
+    v-if="vault"
     :class="[size === 'large' ? 'gap-16' : 'gap-12']"
     class="flex items-center"
   >
     <AssetAvatar
       :asset="assets"
       :size="size === 'large' ? '46' : '38'"
+      :increased-spacing="true"
     />
 
     <div>
@@ -84,7 +101,7 @@ const displayAssetsLabel = computed(() => assetsLabel || assets.map(asset => ass
         <span class="text-content-tertiary">
           <VaultDisplayName
             :name="pairVault ? displayLabel : displayName"
-            :is-unverified="('verified' in vault && !vault.verified) || !!(pairVault && 'verified' in pairVault && !pairVault.verified)"
+            :is-unverified="(!!vault && 'verified' in vault && !vault.verified) || !!(pairVault && 'verified' in pairVault && !pairVault.verified)"
           />
         </span>
         <span

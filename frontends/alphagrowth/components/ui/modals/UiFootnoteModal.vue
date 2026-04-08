@@ -11,7 +11,7 @@ const { modalTitle, text } = defineProps<{
     :title="modalTitle"
     @close="$emit('close')"
   >
-    <div class="text-p2 text-euler-dark-900">
+    <div class="text-p2 text-content-primary">
       {{ text }}
     </div>
   </BaseModalWrapper>

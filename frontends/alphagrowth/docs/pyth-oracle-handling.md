@@ -63,11 +63,13 @@ interface PythFeed {
 
 ### Hermes API
 
-Price update data is fetched from the Pyth Hermes API:
+Price update data is fetched from the Pyth Hermes API via the server-side proxy endpoint `/api/pyth/updates`:
 
 ```
-GET /v2/updates/price/latest?ids[]={feedId1}&ids[]={feedId2}&...
+GET /api/pyth/updates?ids[]={feedId1}&ids[]={feedId2}&...
 ```
+
+The proxy forwards requests to the upstream Hermes endpoint (`PYTH_HERMES_URL/v2/updates/price/latest`), validating feed ID format and enforcing rate limits (600 requests/min). This routing avoids CORS restrictions and keeps the Hermes URL (which may contain credentials) out of the browser. See [Development Guide - Pyth Proxy](./development-guide.md#pyth-proxy-endpoint-details) for details.
 
 Returns binary update payloads that can be passed to the on-chain `updatePriceFeeds()` function.
 
@@ -75,7 +77,7 @@ Returns binary update payloads that can be passed to the on-chain `updatePriceFe
 
 ### Request Batching
 
-`fetchPythUpdateData()` collects all requests within a **50ms window** and combines them into a single HTTP call to Hermes. Multiple vaults requesting different feeds in quick succession result in one network request instead of many.
+`fetchPythUpdateData()` collects all requests within a **50ms window** and combines them into a single call to the `/api/pyth/updates` server proxy. Multiple vaults requesting different feeds in quick succession result in one network request instead of many.
 
 ### Update Data Cache
 

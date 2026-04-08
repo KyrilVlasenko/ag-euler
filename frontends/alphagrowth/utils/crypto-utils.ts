@@ -1,5 +1,6 @@
 import { formatUnits, parseUnits } from 'viem'
 import { TTL_ERROR, TTL_INFINITY, TTL_LIQUIDATION, TTL_MORE_THAN_ONE_YEAR } from '~/entities/constants'
+import { compactNumber } from '~/utils/string-utils'
 
 export const nanoToValue = (src: bigint | number | string, decimals: number | bigint = 9) => {
   return +formatUnits(BigInt(src), Number(decimals))

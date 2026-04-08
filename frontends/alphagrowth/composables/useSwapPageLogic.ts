@@ -2,7 +2,7 @@ import { getAddress, formatUnits } from 'viem'
 import { useAccount } from '@wagmi/vue'
 import { logWarn } from '~/utils/errorHandling'
 import { OperationReviewModal, SlippageSettingsModal } from '#components'
-import { useTermsOfUseGate } from '~/composables/useTermsOfUseGate'
+import { usePriceImpactGate } from '~/composables/usePriceImpactGate'
 import type { Vault, SecuritizeVault } from '~/entities/vault'
 import type { SwapApiQuote } from '~/entities/swap'
 import { getAssetUsdValue } from '~/services/pricing/priceProvider'
@@ -16,6 +16,7 @@ import type { TxPlan } from '~/entities/txPlan'
 import { useModal } from '~/components/ui/composables/useModal'
 import { useToast } from '~/components/ui/composables/useToast'
 import { isSameUnderlyingAsset, isSameVault as isSameVaultCheck } from '~/utils/vault-utils'
+import { isOperationBlocked } from '~/utils/operationGuardRegistry'
 
 export interface UseSwapPageLogicOptions {
   /** Which quote field the swap engine optimises for ('amountIn' = min cost, 'amountOut' = max output) */
@@ -87,7 +88,6 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
   const { executeTxPlan } = useEulerOperations()
   const modal = useModal()
   const { error: showError } = useToast()
-  const { getSubmitLabel, getSubmitDisabled, guardWithTerms } = useTermsOfUseGate()
   const { runSimulation, simulationError, clearSimulationError } = useTxPlanSimulation()
 
   // ── State ──────────────────────────────────────────────────────────────
@@ -97,7 +97,10 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
   const plan = ref<TxPlan | null>(null)
   const fromAmount = ref('')
   const toAmount = ref('')
-  const { slippage } = useSlippage()
+  const { slippage } = useSlippage({
+    fromSymbol: () => fromVault.value?.asset.symbol,
+    toSymbol: () => toVault.value?.asset.symbol,
+  })
 
   // ── Quote engine ───────────────────────────────────────────────────────
   const {
@@ -169,8 +172,11 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
   // ── syncToVault ────────────────────────────────────────────────────────
   const syncToVault = () => {
     if (!fromVault.value) return
-    const opts = vaultOptions.value
-    if (!opts.length) return
+    const opts = vaultOptions.value.filter(v => !isSameVaultCheck(fromVault.value, v))
+    if (!opts.length) {
+      toVault.value = undefined
+      return
+    }
 
     const targetAddr = targetVaultAddress ? normalizeAddress(unref(targetVaultAddress)) : ''
     const currentAddr = toVault.value ? normalizeAddress(toVault.value.address) : ''
@@ -255,6 +261,10 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
     clearSimulationError()
     const nextVault = vaultOptions.value[selectedIndex]
     if (!nextVault) return
+    if (isSameVaultCheck(fromVault.value, nextVault)) {
+      toVault.value = undefined
+      return
+    }
     if (!toVault.value || normalizeAddress(toVault.value.address) !== normalizeAddress(nextVault.address)) {
       toVault.value = nextVault
     }
@@ -277,6 +287,13 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
       onFromInput()
     }
   })
+
+  watch([toVault, fromVault], ([targetVault, sourceVault]) => {
+    if (!targetVault || !sourceVault) return
+    if (isSameVaultCheck(sourceVault, targetVault)) {
+      toVault.value = undefined
+    }
+  }, { immediate: true })
 
   watch([fromVault, slippage], () => {
     clearSimulationError()
@@ -330,12 +347,12 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
 
   const isGeoBlocked = computed(() => isAnyVaultBlockedByCountry(...getGeoBlockedAddresses()))
 
-  const reviewSwapLabel = getSubmitLabel(computed(() => {
+  const reviewSwapLabel = computed(() => {
     if (isSameAsset.value) return 'Review Transfer'
     return selectedQuote.value ? 'Review Swap' : 'Select a Quote'
-  }))
+  })
 
-  const reviewSwapDisabled = getSubmitDisabled(computed(() => isGeoBlocked.value || isSubmitDisabled.value))
+  const reviewSwapDisabled = computed(() => isGeoBlocked.value || isSubmitDisabled.value)
 
   // ── Display ────────────────────────────────────────────────────────────
   const currentPrice = computed(() => {
@@ -356,13 +373,14 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
     const fromSide = formatUnits(BigInt(quote.value[otherAmountField]), Number(fromVault.value.asset.decimals))
     const toSide = formatUnits(BigInt(quote.value[displayAmountField]), Number(toVault.value.asset.decimals))
     return {
-      from: `${formatSignificant(fromSide)} ${fromVault.value.asset.symbol}`,
-      to: `${formatSignificant(toSide)} ${toVault.value.asset.symbol}`,
+      from: `${formatSmartAmount(fromSide)} ${fromVault.value.asset.symbol}`,
+      to: `${formatSmartAmount(toSide)} ${toVault.value.asset.symbol}`,
     }
   })
 
   // ── Price impact ───────────────────────────────────────────────────────
   const priceImpact = ref<number | null>(null)
+  const { guardWithPriceImpact } = usePriceImpactGate({ directPriceImpact: priceImpact })
 
   watchEffect(async () => {
     if (!quote.value || !fromVault.value || !toVault.value) {
@@ -399,10 +417,7 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
       getQuoteDiffPct,
       decimals: Number(toVault.value.decimals),
       symbol: toVault.value.asset.symbol,
-      formatAmount: (raw) => {
-        const num = Number(raw)
-        return num < 0.01 && num > 0 ? formatSignificant(raw, 3) : formatSignificant(raw)
-      },
+      formatAmount: formatSmartAmount,
       amountField: displayAmountField,
       diffPrefix: quoteDiffPrefix,
     })
@@ -419,10 +434,11 @@ export const useSwapPageLogic = (options: UseSwapPageLogicOptions) => {
 
   // ── Submit flow ────────────────────────────────────────────────────────
   const submit = async () => {
+    if (isOperationBlocked.value) return
     if (isPreparing.value || isGeoBlocked.value) return
     isPreparing.value = true
     try {
-      await guardWithTerms(async () => {
+      await guardWithPriceImpact(async () => {
         if (isSubmitting.value || !fromVault.value) return
         if (!isSameAsset.value && !selectedQuote.value) return
 

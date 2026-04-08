@@ -2,6 +2,7 @@
 import { useAccount } from '@wagmi/vue'
 import { getAssetUsdValue, formatAssetValue } from '~/services/pricing/priceProvider'
 import { isVaultBlockedByCountry } from '~/composables/useGeoBlock'
+import { isVaultDeprecated, getVaultNotice } from '~/utils/eulerLabelsUtils'
 import { type AccountDepositPosition, getSubAccountIndex } from '~/entities/account'
 import type { EarnVault } from '~/entities/vault'
 import { VaultOverviewModal, VaultSupplyApyModal } from '#components'
@@ -28,7 +29,9 @@ const rewardsExist = computed(() => hasSupplyRewards(vault.value.address))
 
 const product = useEulerProductOfVault(computed(() => vault.value.address))
 const isGeoBlocked = computed(() => isVaultBlockedByCountry(vault.value.address))
+const isDeprecated = computed(() => isVaultDeprecated(vault.value.address))
 const isUnverified = computed(() => 'verified' in vault.value && !vault.value.verified)
+const vaultNotice = computed(() => getVaultNotice(vault.value.address))
 const displayName = computed(() => product.name || vault.value.name)
 
 const supplyValueDisplay = ref('-')
@@ -80,6 +83,7 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
       intrinsicAPY: getIntrinsicApy(vault.value.asset.address),
       intrinsicApyInfo: getIntrinsicApyInfo(vault.value.asset.address),
       campaigns: getSupplyRewardCampaigns(vault.value.address),
+      baseApyAverageLabel: '1h',
     },
   })
 }
@@ -87,6 +91,7 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
 const onClick = () => {
   modal.open(VaultOverviewModal, {
     props: {
+      title: 'Vault information',
       earnVault: vault,
     },
   })
@@ -105,6 +110,7 @@ const onClick = () => {
         <AssetAvatar
           :asset="vault.asset"
           size="40"
+          :increased-spacing="true"
         />
         <div class="flex-grow ml-12">
           <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
@@ -123,6 +129,17 @@ const onClick = () => {
               />
               Restricted
             </span>
+            <span
+              v-if="isDeprecated"
+              class="inline-flex items-center gap-4 rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5"
+              title="This vault has been deprecated."
+            >
+              <SvgIcon
+                name="warning"
+                class="!w-14 !h-14"
+              />
+              Deprecated
+            </span>
           </div>
           <div class="text-h5 text-content-primary">
             {{ vault.asset.symbol }}
@@ -131,6 +148,9 @@ const onClick = () => {
         <div class="flex flex-col items-end">
           <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
             Supply APY
+            <span class="inline-flex items-center rounded-8 px-8 py-2 bg-accent-100 text-accent-600 text-p5">
+              1h
+            </span>
             <SvgIcon
               class="!w-16 !h-16 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
               name="info-circle"
@@ -155,6 +175,7 @@ const onClick = () => {
       <div
         class="flex flex-col gap-12 w-full"
       >
+        <PortfolioNotice :notice="vaultNotice" />
         <div class="flex justify-between">
           <div class="text-content-tertiary text-p3">
             Supply value
@@ -189,7 +210,7 @@ const onClick = () => {
           @click.stop
         >
           <UiButton
-            :to="isGeoBlocked ? undefined : `/earn/${vault.address}/`"
+            :to="isGeoBlocked ? undefined : { path: `/earn/${vault.address}/`, query: { network: $route.query.network } }"
             :disabled="isGeoBlocked"
             rounded
           >
@@ -197,7 +218,7 @@ const onClick = () => {
           </UiButton>
           <UiButton
             variant="primary-stroke"
-            :to="`/earn/${vault.address}/${subAccountIndex}/withdraw`"
+            :to="{ path: `/earn/${vault.address}/${subAccountIndex}/withdraw`, query: { network: $route.query.network } }"
             rounded
           >
             Withdraw

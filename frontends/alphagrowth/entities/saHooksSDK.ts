@@ -273,6 +273,7 @@ export class SaHooksBuilder {
   encode(): string {
     return encodeAbiParameters(
       saHooksAbiParameters,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- encodeAbiParameters expects narrow tuple type
       [this.hooks as any],
     )
   }

@@ -17,9 +17,14 @@ interface ChainConfig {
 let cached: ChainConfig | null = null
 
 function scanEnv(): ChainConfig {
-  const enabledChainIds = Object.keys(process.env)
-    .filter(k => /^RPC_URL_HTTP_\d+$/.test(k) && process.env[k])
-    .map(k => Number(k.replace('RPC_URL_HTTP_', '')))
+  const enabledChainIds: number[] = []
+
+  for (const [key, value] of Object.entries(process.env)) {
+    const rpcMatch = key.match(/^RPC_URL_HTTP_(\d+)$/)
+    if (rpcMatch && value) {
+      enabledChainIds.push(Number(rpcMatch[1]))
+    }
+  }
 
   const subgraphUris: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
@@ -28,6 +33,8 @@ function scanEnv(): ChainConfig {
       subgraphUris[match[1]] = value
     }
   }
+
+  enabledChainIds.sort((a, b) => a - b)
 
   return { enabledChainIds, subgraphUris }
 }
@@ -38,8 +45,10 @@ export const useChainConfig = (): ChainConfig => {
   if (import.meta.server) {
     cached = scanEnv()
   }
+  /* eslint-disable @typescript-eslint/no-explicit-any -- server-injected window global */
   else if (typeof window !== 'undefined' && (window as any).__CHAIN_CONFIG__) {
     cached = (window as any).__CHAIN_CONFIG__
+  /* eslint-enable @typescript-eslint/no-explicit-any */
   }
   else {
     cached = { enabledChainIds: [], subgraphUris: {} }

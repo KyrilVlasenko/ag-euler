@@ -1,5 +1,7 @@
-import { BaseError, ContractFunctionRevertedError } from 'viem'
+import { BaseError, ContractFunctionRevertedError, formatUnits } from 'viem'
 import { ERROR_MESSAGE_MAP, ERROR_SIGNATURE_MAP, NON_BLOCKING_SIMULATION_ERRORS } from '~/entities/constants'
+import { hasGuard, getGuardMeta } from '~/utils/operationGuardRegistry'
+import { getChainById } from '~/entities/chainRegistry'
 
 const parseErrorCodeFromMessage = (message: string) => {
   const match = message.match(/execution reverted: (.+)$/i)
@@ -67,7 +69,29 @@ export const isNonBlockingSimulationError = (error: unknown) => {
   return code ? NON_BLOCKING_SIMULATION_ERRORS.has(code) : false
 }
 
+const isInsufficientBalanceError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('exceeds the balance of the account')
+    || message.includes('insufficient funds')
+}
+
 export const getTxErrorMessage = (error: unknown) => {
+  if (isInsufficientBalanceError(error)) {
+    if (hasGuard('keyring').value) {
+      const meta = getGuardMeta('keyring').value
+      const cost = meta?.credentialCost as number | undefined
+      const cid = meta?.chainId as number | undefined
+      const chain = cid ? getChainById(cid) : undefined
+      const symbol = chain?.nativeCurrency?.symbol ?? 'ETH'
+      const decimals = chain?.nativeCurrency?.decimals ?? 18
+      const feeDisplay = cost
+        ? ` of ${parseFloat(formatUnits(BigInt(cost), decimals)).toFixed(6)} ${symbol}`
+        : ''
+      return `Insufficient balance. This transaction includes a Keyring credential fee${feeDisplay}. Ensure you have enough ${symbol} to cover the fee and gas.`
+    }
+    return 'Insufficient balance to cover gas fees and transaction value.'
+  }
+
   const code = extractErrorCode(error)
   if (code) {
     return ERROR_MESSAGE_MAP[code] || `Transaction simulation failed: ${formatErrorCode(code)}`

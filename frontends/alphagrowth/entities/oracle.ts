@@ -97,6 +97,14 @@ export const decodeEulerRouterInfo = (oracleInfo: Hex | string | Uint8Array): Eu
   }
 }
 
+export const getEulerRouterGovernor = (
+  oracleInfo: OracleDetailedInfo | null | undefined,
+): Address | null => {
+  if (!oracleInfo || oracleInfo.name !== 'EulerRouter') return null
+  const decoded = decodeEulerRouterInfo(oracleInfo.oracleInfo)
+  return decoded?.governor ?? null
+}
+
 export const decodeCrossAdapterInfo = (oracleInfo: Hex | string | Uint8Array): CrossAdapterInfo | null => {
   try {
     const [decoded] = decodeAbiParameters(

@@ -1,6 +1,4 @@
-import { EULER_INTERFACES_CHAINS_URL } from '~/entities/constants'
 import { logWarn } from '~/utils/errorHandling'
-import { getParentChainId, isForkChain } from '~/entities/forkChainMap'
 
 export type EulerLensAddresses = {
   accountLens: string
@@ -114,25 +112,13 @@ export const useEulerAddresses = () => {
     error.value = null
 
     try {
-      if (!EULER_INTERFACES_CHAINS_URL) {
-        throw new Error('Euler chains URL is not configured')
-      }
-      const response = await fetch(EULER_INTERFACES_CHAINS_URL)
+      const response = await fetch('/api/euler-chains')
       if (!response.ok) {
         throw new Error(`Failed to fetch Euler config: ${response.statusText}`)
       }
 
       const data: EulerChainConfig[] = await response.json()
       const filteredData = data.filter(chain => allowedChainIds.value.includes(chain.chainId))
-
-      for (const allowedId of allowedChainIds.value) {
-        if (isForkChain(allowedId) && !filteredData.some(c => c.chainId === allowedId)) {
-          const parentConfig = data.find(c => c.chainId === getParentChainId(allowedId))
-          if (parentConfig) {
-            filteredData.push({ ...parentConfig, chainId: allowedId })
-          }
-        }
-      }
 
       if (!filteredData.length) {
         logWarn('useEulerAddresses', 'enabledChainIds did not match any remote chains, using full list')

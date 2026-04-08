@@ -49,9 +49,14 @@ export const EXCLUDED_SWAP_PROVIDERS = new Set(['cow'])
 export const SWAP_DEFAULT_DEADLINE_SECONDS = 1800
 export const SLIPPAGE_STORAGE_KEY = 'swap-slippage'
 export const PERMIT2_PREFERENCE_STORAGE_KEY = 'permit2-enabled'
+export const SHOW_ALL_HINT_DISMISSED_KEY = 'show-all-hint-dismissed'
 export const DEFAULT_SLIPPAGE = 0.5
+export const DEFAULT_STABLECOIN_SLIPPAGE = 0.1
+export const SLIPPAGE_EXPIRY_MS = 24 * 60 * 60 * 1000
+export const SLIPPAGE_TIMESTAMP_STORAGE_KEY = 'swap-slippage-set-at'
 export const MIN_SLIPPAGE = 0
 export const MAX_SLIPPAGE = 50
+export const HIGH_SLIPPAGE_THRESHOLD = 5
 
 export const USD_ADDRESS: Address = '0x0000000000000000000000000000000000000348'
 export const EUR_ADDRESS: Address = '0x00000000000000000000000000000000000003d2'
@@ -132,8 +137,13 @@ export const MERKL_DISTRIBUTOR_ADDRESS = '0x3Ef3D8bA38EBe18DB133cEc108f4D14CE00D
 export const MERKL_API_BASE_URL = 'https://api.merkl.xyz/v4'
 export const EULER_INTERFACES_CHAINS_URL = 'https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/EulerChains.json'
 export const DEFILLAMA_YIELDS_URL = 'https://yields.llama.fi/pools'
+export const SECURITIZE_FEED_URL = 'https://public-feed.securitize.io/asset-stats'
 export const BREVIS_API_URL = 'https://incentra-prd.brevis.network/sdk/v1/eulerCampaigns'
 export const BREVIS_MERKLE_PROOF_URL = 'https://incentra-prd.brevis.network/v1/getMerkleProofsBatch'
+export const FUUL_API_BASE_URL = 'https://api.fuul.xyz/api/v1'
+export const FUUL_MANAGER_ADDRESS = '0x8a0836dA623ea1083c85acB958DeEa3716b39dc6'
+export const FUUL_FACTORY_ADDRESS = '0xa0080A60EE9f1985151161Fa6b09652Dc46afdEF'
+export const STABLEWATCH_SOURCE_URL = 'https://stablewatch.io'
 
 // Re-export geo-blocking constants (separated to avoid pulling BigInt into server builds)
 export { SANCTIONED_COUNTRIES, EU_COUNTRIES, EEA_COUNTRIES, EFTA_COUNTRIES, COUNTRY_GROUPS } from './country-constants'

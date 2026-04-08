@@ -89,7 +89,7 @@ const knownSymbols = computed(() => {
 const adapterViews = computed(() => adapters.value.map((adapter) => {
   const meta: OracleAdapterMeta | undefined = oracleAdapters[adapter.oracle.toLowerCase()]
   const isERC4626 = adapter.name === 'ERC4626Vault'
-  const provider = meta?.provider || (isERC4626 ? 'ERC4626Vault' : undefined)
+  const provider = meta?.provider || adapter.name
   const name = meta?.name || adapter.name
 
   return {

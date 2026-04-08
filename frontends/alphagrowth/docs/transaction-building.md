@@ -17,7 +17,7 @@ interface TxPlan {
   kind: 'supply' | 'withdraw' | 'borrow' | 'repay' | 'full-repay'
       | 'savings-repay' | 'savings-full-repay' | 'swap-collateral-full-repay'
       | 'swap-savings-full-repay' | 'disable-collateral' | 'reward'
-      | 'brevis-reward' | 'reul-unlock' | string
+      | 'brevis-reward' | 'fuul-reward' | 'reul-unlock' | string
   steps: TxStep[]
 }
 ```
@@ -116,7 +116,18 @@ Deposits assets into a vault.
 EVC batch calls:
 1. *(Optional)* Permit2 signature call
 2. *(Optional)* Terms of Use signing
-3. `vault.deposit(amount, receiver)`
+3. *(Optional)* Native currency wrapping (see below)
+4. `vault.deposit(amount, receiver)`
+
+#### Native Currency Wrapping
+
+When the user pays with the native currency (e.g. ETH) and the vault's underlying is the wrapped version (e.g. WETH), the system detects this as a direct deposit (no swap needed). Two batch items are prepended:
+1. `WETH.deposit{value: amount}()` — wraps ETH, WETH minted to EVC
+2. `WETH.transfer(userAddr, amount)` — moves WETH from EVC to user wallet
+
+The top-level `EVC.batch{value}` call carries the ETH amount (aggregated by `sumCallValues()`). Approvals work normally because `ERC20.approve` does not require a token balance.
+
+When the native currency is selected but the vault underlying is a *different* token, the swap flow is used instead (`buildSwapAndSupplyPlan`) with the same wrapping mechanism injected before `transferFromSender`.
 
 ### Withdraw
 
@@ -149,10 +160,11 @@ Creates a new borrow position: deposits collateral, enables controller/collatera
 EVC batch calls:
 1. *(Optional)* Pyth price updates for both collateral and borrow vaults
 2. *(Optional)* Permit2 / Terms of Use
-3. `collateralVault.deposit(amount, subAccount)`
-4. `evc.enableController(subAccount, borrowVault)`
-5. `evc.enableCollateral(subAccount, collateralVault)`
-6. `borrowVault.borrow(borrowAmount, receiver)`
+3. *(Optional)* Native currency wrapping (same mechanism as Supply)
+4. `collateralVault.deposit(amount, subAccount)`
+5. `evc.enableController(subAccount, borrowVault)`
+6. `evc.enableCollateral(subAccount, collateralVault)`
+7. `borrowVault.borrow(borrowAmount, receiver)`
 
 ### BorrowBySaving
 
@@ -356,12 +368,21 @@ The EVC supports 256 sub-accounts per user address. Sub-accounts enable **positi
 
 ## Execution & Simulation
 
+### Operation Guard Registry
+
+Before execution or simulation, plans are transformed by the **operation guard registry** (`utils/operationGuardRegistry.ts`). Guards are reactive plan transformers registered by composables like `useOperationGuard`. Currently used for:
+
+- **Keyring credential injection**: Automatically prepends a `createCredential` call to the EVC batch when interacting with keyring-protected vaults. See [keyring-hooks.md](./keyring-hooks.md).
+
+The registry also supports **blockers** (disable the submit button with a reason) and **metadata** (contextual info like credential fees for error messages).
+
 ### `executeTxPlan(plan)`
 
 Executes each step of a `TxPlan` sequentially:
-1. For each `TxStep`, calls `writeContractAsync()` with the step's parameters
-2. Waits for transaction receipt before proceeding to the next step
-3. Returns the final transaction hash
+1. Applies operation guards to transform the plan (`applyOperationGuards`)
+2. For each `TxStep`, calls `writeContractAsync()` with the step's parameters
+3. Waits for transaction receipt before proceeding to the next step
+4. Returns the final transaction hash
 
 ### `simulateTxPlan(plan)`
 

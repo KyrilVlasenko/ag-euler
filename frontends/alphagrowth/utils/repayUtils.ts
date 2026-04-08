@@ -3,6 +3,7 @@
  * Extracted from pages/position/[number]/repay.vue to eliminate duplication
  * across wallet, collateral-swap, and savings tabs.
  */
+import { formatNumber } from '~/utils/string-utils'
 
 export const amountToPercent = (amountNano: bigint, totalDebt: bigint): number => {
   if (totalDebt <= 0n || amountNano <= 0n) return 0
@@ -20,6 +21,7 @@ export const computeNextLtv = (
   priceRatio: number,
 ): number | null => {
   if (borrowAfter === 0) return 0
+  if (!Number.isFinite(priceRatio) || !Number.isFinite(collateralAfter)) return null
   if (priceRatio <= 0 || collateralAfter <= 0) return null
   return (borrowAfter / (collateralAfter * priceRatio)) * 100
 }
@@ -33,12 +35,29 @@ export const computeNextHealth = (
   return liquidationLtv / nextLtv
 }
 
+export const formatLiquidationBuffer = (
+  oraclePrice: number | null | undefined,
+  liqPrice: number | null | undefined,
+): string | undefined => {
+  const d = computeLiquidationBuffer(oraclePrice, liqPrice)
+  return d !== null ? formatNumber(d) : undefined
+}
+
+export const computeLiquidationBuffer = (
+  oraclePrice: number | null | undefined,
+  liqPrice: number | null | undefined,
+): number | null => {
+  if (!oraclePrice || !liqPrice || !Number.isFinite(oraclePrice) || !Number.isFinite(liqPrice)) return null
+  if (oraclePrice === 0) return null
+  return Math.abs(liqPrice - oraclePrice) / oraclePrice * 100
+}
+
 export const computeLiquidationPrice = (
   priceRatio: number | null,
   health: number | null,
 ): number | null => {
   if (!priceRatio || !health) return null
-  if (health <= 0) return null
+  if (health < 1) return null
   return priceRatio / health
 }
 

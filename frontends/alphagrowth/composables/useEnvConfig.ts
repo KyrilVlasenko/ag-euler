@@ -13,25 +13,25 @@
 interface EnvConfig {
   appTitle: string
   appDescription: string
+  logoUrl: string
   pythHermesUrl: string
   appKitProjectId: string
   appUrl: string
   eulerApiUrl: string
   swapApiUrl: string
   priceApiUrl: string
-  ensoApiUrl: string
 }
 
 const DEFAULTS: EnvConfig = {
-  appTitle: 'AlphaGrowth Vaults',
-  appDescription: 'All AlphaGrowth curated Euler vaults in one place',
+  appTitle: 'Euler Lite',
+  appDescription: 'Lightweight interface for Euler Finance lending and borrowing.',
+  logoUrl: '',
   pythHermesUrl: '',
   appKitProjectId: '',
   appUrl: '',
   eulerApiUrl: '',
   swapApiUrl: '',
   priceApiUrl: '',
-  ensoApiUrl: '',
 }
 
 let cached: EnvConfig | null = null
@@ -47,13 +47,13 @@ function scanEnv(): EnvConfig {
   return {
     appTitle: env('APP_TITLE', 'NUXT_PUBLIC_CONFIG_APP_TITLE') || DEFAULTS.appTitle,
     appDescription: env('APP_DESCRIPTION', 'NUXT_PUBLIC_CONFIG_APP_DESCRIPTION') || DEFAULTS.appDescription,
-    pythHermesUrl: env('PYTH_HERMES_URL', 'NUXT_PUBLIC_PYTH_HERMES_URL') || DEFAULTS.pythHermesUrl,
+    logoUrl: env('LOGO_URL', 'NUXT_PUBLIC_CONFIG_LOGO_URL') || DEFAULTS.logoUrl,
+    pythHermesUrl: env('PYTH_HERMES_URL', 'NUXT_PUBLIC_PYTH_HERMES_URL') || '',
     appKitProjectId: env('APPKIT_PROJECT_ID', 'NUXT_PUBLIC_APP_KIT_PROJECT_ID') || DEFAULTS.appKitProjectId,
     appUrl: env('NUXT_PUBLIC_APP_URL') || DEFAULTS.appUrl,
     eulerApiUrl: env('EULER_API_URL', 'NUXT_PUBLIC_EULER_API_URL') || DEFAULTS.eulerApiUrl,
     swapApiUrl: env('SWAP_API_URL', 'NUXT_PUBLIC_SWAP_API_URL') || DEFAULTS.swapApiUrl,
     priceApiUrl: env('PRICE_API_URL', 'NUXT_PUBLIC_PRICE_API_URL') || DEFAULTS.priceApiUrl,
-    ensoApiUrl: env('ENSO_API_URL', 'NUXT_PUBLIC_ENSO_API_URL') || DEFAULTS.ensoApiUrl,
   }
 }
 
@@ -64,13 +64,13 @@ function fromRuntimeConfig(): EnvConfig {
   return {
     appTitle: str(rc.configAppTitle) || DEFAULTS.appTitle,
     appDescription: str(rc.configAppDescription) || DEFAULTS.appDescription,
-    pythHermesUrl: str(rc.pythHermesUrl) || DEFAULTS.pythHermesUrl,
+    logoUrl: str(rc.configLogoUrl) || DEFAULTS.logoUrl,
+    pythHermesUrl: str(rc.pythHermesUrl) ? 'proxy' : '',
     appKitProjectId: str(rc.appKitProjectId) || DEFAULTS.appKitProjectId,
     appUrl: str(rc.appUrl) || DEFAULTS.appUrl,
     eulerApiUrl: str(rc.eulerApiUrl) || DEFAULTS.eulerApiUrl,
     swapApiUrl: str(rc.swapApiUrl) || DEFAULTS.swapApiUrl,
     priceApiUrl: str(rc.priceApiUrl) || DEFAULTS.priceApiUrl,
-    ensoApiUrl: str(rc.ensoApiUrl) || DEFAULTS.ensoApiUrl,
   }
 }
 
@@ -80,8 +80,10 @@ export const useEnvConfig = (): EnvConfig => {
   if (import.meta.server) {
     cached = scanEnv()
   }
+  /* eslint-disable @typescript-eslint/no-explicit-any -- server-injected window global */
   else if (typeof window !== 'undefined' && (window as any).__APP_CONFIG__) {
     cached = (window as any).__APP_CONFIG__
+  /* eslint-enable @typescript-eslint/no-explicit-any */
   }
   else {
     cached = fromRuntimeConfig()

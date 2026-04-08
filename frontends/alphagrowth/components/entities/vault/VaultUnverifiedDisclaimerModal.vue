@@ -1,11 +1,11 @@
 <script setup lang="ts">
 const emits = defineEmits(['close'])
-const { onCancel } = defineProps<{
-  onCancel: () => void
+const { cancelAction } = defineProps<{
+  cancelAction: () => void
 }>()
 
 const handleCancel = () => {
-  onCancel()
+  cancelAction()
   emits('close')
 }
 </script>
@@ -16,7 +16,7 @@ const handleCancel = () => {
     warning
     @close="handleCancel"
   >
-    <div class="flex flex-col gap-12 text-euler-dark-900 mb-24">
+    <div class="flex flex-col gap-12 text-content-primary mb-24">
       <h4 class="text-white text-h4">
         Are you sure you want to interact with the unverified vault?
       </h4>

@@ -6,6 +6,7 @@ import {
   useEnsoRoute,
   previewAdapterZapIn,
   zapInFunctionAbi,
+  EnsoRouteNotFoundError,
   type BptAdapterConfigEntry,
 } from '~/composables/useEnsoRoute'
 import { logWarn } from '~/utils/errorHandling'
@@ -169,6 +170,7 @@ export const useZapBpt = () => {
     const input = inputAmountNano.value
     if (!pool || input <= 0n) return
     if (!currentChainId.value) return
+    if (!address.value) return
 
     isQuoting.value = true
 
@@ -201,8 +203,14 @@ export const useZapBpt = () => {
       }
     }
     catch (e: any) {
-      quoteError.value = e?.message || 'Failed to get zap preview'
-      logWarn('zap-bpt/preview', e)
+      if (e instanceof EnsoRouteNotFoundError) {
+        quoteError.value = e.message
+        expectedBptFromZap.value = 0n
+      }
+      else {
+        quoteError.value = e?.message || 'Failed to get zap preview'
+        logWarn('zap-bpt/preview', e)
+      }
     }
     finally {
       isQuoting.value = false
@@ -321,8 +329,13 @@ export const useZapBpt = () => {
       await updateBalance()
     }
     catch (e: any) {
-      logWarn('zap-bpt/zap-in', e)
-      showError(e?.shortMessage || e?.message || 'Zap failed')
+      if (e instanceof EnsoRouteNotFoundError) {
+        quoteError.value = e.message
+      }
+      else {
+        logWarn('zap-bpt/zap-in', e)
+        showError(e?.shortMessage || e?.message || 'Zap failed')
+      }
     }
     finally {
       isZapping.value = false

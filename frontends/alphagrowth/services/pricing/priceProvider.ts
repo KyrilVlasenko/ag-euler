@@ -290,7 +290,7 @@ const getAssetUsdPriceFromOracle = async (
 
   // Earn/Escrow/Securitize vaults - use UtilsLens (assetPriceInfo is already in USD)
   if (usesUtilsLensPricing(vault)) {
-    const priceInfo = (vault as Vault | EarnVault).assetPriceInfo
+    const priceInfo = (vault as Vault | EarnVault | SecuritizeVault).assetPriceInfo
     if (priceInfo?.amountOutMid) {
       const mid = priceInfo.amountOutMid
       return { amountOutMid: mid, amountOutAsk: mid, amountOutBid: mid }
@@ -305,10 +305,15 @@ const getAssetUsdPriceFromOracle = async (
   const uoaRate = await getUnitOfAccountUsdRate(vault as Vault)
   if (!uoaRate) return undefined
 
+  // The oracle returns prices in UoA-native decimals (e.g. 6 for USDC/AUSD, 18 for WETH/WMON).
+  // Normalize the result to 18 decimals so downstream consumers can use nanoToValue(_, 18).
+  const uoaDecimals = Number((vault as Vault).unitOfAccountDecimals ?? 18n)
+  const decimalScale = 10n ** BigInt(18 - uoaDecimals)
+
   return {
-    amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
-    amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / ONE_18,
-    amountOutBid: (oraclePrice.amountOutBid * uoaRate) / ONE_18,
+    amountOutMid: ((oraclePrice.amountOutMid * uoaRate) / ONE_18) * decimalScale,
+    amountOutAsk: ((oraclePrice.amountOutAsk * uoaRate) / ONE_18) * decimalScale,
+    amountOutBid: ((oraclePrice.amountOutBid * uoaRate) / ONE_18) * decimalScale,
   }
 }
 
@@ -332,10 +337,15 @@ const getCollateralUsdPriceFromOracle = async (
   const uoaRate = await getUnitOfAccountUsdRate(liabilityVault)
   if (!uoaRate) return undefined
 
+  // The oracle returns prices in UoA-native decimals (e.g. 6 for USDC/AUSD, 18 for WETH/WMON).
+  // Normalize the result to 18 decimals so downstream consumers can use nanoToValue(_, 18).
+  const uoaDecimals = Number(liabilityVault.unitOfAccountDecimals ?? 18n)
+  const decimalScale = 10n ** BigInt(18 - uoaDecimals)
+
   return {
-    amountOutMid: (oraclePrice.amountOutMid * uoaRate) / ONE_18,
-    amountOutAsk: (oraclePrice.amountOutAsk * uoaRate) / ONE_18,
-    amountOutBid: (oraclePrice.amountOutBid * uoaRate) / ONE_18,
+    amountOutMid: ((oraclePrice.amountOutMid * uoaRate) / ONE_18) * decimalScale,
+    amountOutAsk: ((oraclePrice.amountOutAsk * uoaRate) / ONE_18) * decimalScale,
+    amountOutBid: ((oraclePrice.amountOutBid * uoaRate) / ONE_18) * decimalScale,
   }
 }
 

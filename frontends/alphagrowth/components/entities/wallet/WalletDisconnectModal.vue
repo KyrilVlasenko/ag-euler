@@ -7,15 +7,22 @@ const emits = defineEmits(['close'])
 const { address } = useAccount()
 const { disconnect } = useDisconnect()
 const { chainId } = useEulerAddresses()
+const { isSpyMode, spyAddress, clearSpyMode } = useSpyMode()
 
-const explorerLink = computed(() => getExplorerLink(address.value, chainId.value, true))
+const displayAddress = computed(() => isSpyMode.value ? spyAddress.value : address.value)
+const explorerLink = computed(() => getExplorerLink(displayAddress.value, chainId.value, true))
 
 const onCopyAddressClick = () => {
-  navigator.clipboard.writeText(address.value || '')
+  navigator.clipboard.writeText(displayAddress.value || '')
 }
 
 const onDisconnectClick = () => {
-  disconnect()
+  if (isSpyMode.value) {
+    clearSpyMode()
+  }
+  else {
+    disconnect()
+  }
   emits('close')
 }
 </script>
@@ -30,7 +37,7 @@ const onDisconnectClick = () => {
     >
       <div class="flex justify-center items-center gap-16">
         <div class="text-h3 text-center">
-          {{ `${address?.slice(0, 6)}...${address?.slice(-4)}` }}
+          {{ `${displayAddress?.slice(0, 6)}...${displayAddress?.slice(-4)}` }}
         </div>
         <UiButton
           variant="primary-stroke"
@@ -40,7 +47,7 @@ const onDisconnectClick = () => {
           @click="onCopyAddressClick"
         />
         <NuxtLink
-          v-if="address"
+          v-if="displayAddress"
           :to="explorerLink"
           target="_blank"
           external
@@ -61,7 +68,7 @@ const onDisconnectClick = () => {
       icon="unlink"
       @click="onDisconnectClick"
     >
-      Disconnect
+      {{ isSpyMode ? 'Exit spy mode' : 'Disconnect' }}
     </UiButton>
   </BaseModalWrapper>
 </template>

@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { getAddress, isAddress } from 'viem'
+import { getAddress, isAddress, zeroAddress, type Address } from 'viem'
 import type { VaultAsset } from '~/entities/vault'
 import { formatNumber } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
+
+export interface SwapTokenSelectMeta {
+  isUnknownToken?: boolean
+}
 
 const emits = defineEmits<{
   close: []
 }>()
 
-const { onSelect, currentAssetAddress } = defineProps<{
-  onSelect: (asset: VaultAsset) => void
+const { onSelect, currentAssetAddress, mode = 'input', allowNativeCurrency = false } = defineProps<{
+  onSelect: (asset: VaultAsset, meta?: SwapTokenSelectMeta) => void
   currentAssetAddress?: string
+  mode?: 'input' | 'output'
+  /** Show address-zero native currency entry. Only enable for flows that support wrapping. */
+  allowNativeCurrency?: boolean
 }>()
 
 const { getByType } = useVaultRegistry()
 const { getBalance } = useWallets()
+const { getAllTokens, toVaultAsset } = useTokenList()
 const {
   customToken,
   customTokenBalance,
@@ -30,12 +38,14 @@ interface TokenOption {
   asset: VaultAsset
   balance: bigint
   balanceFormatted: number
+  source: 'vault' | 'tokenList'
 }
 
 const tokenOptions = computed((): TokenOption[] => {
   const seen = new Set<string>()
   const options: TokenOption[] = []
 
+  // Vault assets first — they take precedence
   const allVaults = [...getByType('evk'), ...getByType('earn'), ...getByType('securitize')]
   for (const vault of allVaults) {
     if (!vault.asset?.address) continue
@@ -49,15 +59,39 @@ const tokenOptions = computed((): TokenOption[] => {
     if (seen.has(normalized)) continue
     seen.add(normalized)
 
-    const balance = getBalance(normalized as `0x${string}`)
+    const balance = getBalance(normalized as Address)
     options.push({
       asset: vault.asset,
       balance,
       balanceFormatted: nanoToValue(balance, vault.asset.decimals),
+      source: 'vault',
     })
   }
 
-  // Sort: tokens with balance first (desc by balance), then alphabetically
+  // Token list tokens — only those not already in vault set
+  for (const entry of getAllTokens()) {
+    let normalized: string
+    try {
+      normalized = getAddress(entry.address)
+    }
+    catch {
+      continue
+    }
+    if (seen.has(normalized)) continue
+    if (normalized === zeroAddress && !allowNativeCurrency) continue
+    seen.add(normalized)
+
+    const asset = toVaultAsset(entry)
+    const balance = getBalance(normalized as Address)
+    options.push({
+      asset,
+      balance,
+      balanceFormatted: nanoToValue(balance, asset.decimals),
+      source: 'tokenList',
+    })
+  }
+
+  // Sort: tokens with balance first (desc by balance), then vault tokens alphabetically
   return options.sort((a, b) => {
     if (a.balance > 0n && b.balance <= 0n) return -1
     if (a.balance <= 0n && b.balance > 0n) return 1
@@ -69,6 +103,7 @@ const tokenOptions = computed((): TokenOption[] => {
   })
 })
 
+// Include both vault and token list addresses in known set
 const knownAddresses = computed(() => {
   const set = new Set<string>()
   for (const opt of tokenOptions.value) {
@@ -83,13 +118,21 @@ const isUnknownAddress = computed(() => {
 })
 
 const filteredOptions = computed(() => {
-  if (!searchQuery.value) return tokenOptions.value
-  const q = searchQuery.value.toLowerCase()
-  return tokenOptions.value.filter(opt =>
-    opt.asset.symbol.toLowerCase().includes(q)
-    || opt.asset.name.toLowerCase().includes(q)
-    || opt.asset.address.toLowerCase().includes(q),
-  )
+  const base = searchQuery.value
+    ? tokenOptions.value.filter((opt) => {
+        const q = searchQuery.value.toLowerCase()
+        return opt.asset.symbol.toLowerCase().includes(q)
+          || opt.asset.name.toLowerCase().includes(q)
+          || opt.asset.address.toLowerCase().includes(q)
+      })
+    : tokenOptions.value
+
+  // For input mode (pay with): filter zero-balance tokens when not searching
+  // For output mode (receive as): always show all tokens
+  if (mode === 'input' && !searchQuery.value) {
+    return base.filter(opt => opt.balance > 0n)
+  }
+  return base
 })
 
 watch(searchQuery, (q) => {
@@ -113,13 +156,13 @@ const isSelected = (address: string) => {
 }
 
 const handleSelect = (opt: TokenOption) => {
-  onSelect(opt.asset)
+  onSelect(opt.asset, { isUnknownToken: false })
   emits('close')
 }
 
 const handleSelectCustomToken = () => {
   if (!customToken.value) return
-  onSelect(customToken.value)
+  onSelect(customToken.value, { isUnknownToken: true })
   emits('close')
 }
 </script>
@@ -130,99 +173,101 @@ const handleSelectCustomToken = () => {
     full
     @close="$emit('close')"
   >
-    <div class="px-16 pb-12">
-      <UiInput
-        v-model="searchQuery"
-        placeholder="Search by name, symbol, or address"
-        icon="search"
-        clearable
-      />
-    </div>
-    <div class="flex-1 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div
-        v-for="opt in filteredOptions"
-        :key="opt.asset.address"
-        class="flex items-center py-12 px-16 rounded-16 cursor-pointer"
-        :class="isSelected(opt.asset.address) ? 'bg-euler-dark-600' : ''"
-        @click="handleSelect(opt)"
-      >
-        <AssetAvatar
-          :asset="opt.asset"
-          size="36"
-          class="mr-10"
+    <div class="flex flex-col flex-1 min-h-0 overflow-hidden">
+      <div class="px-16 pb-12">
+        <UiInput
+          v-model="searchQuery"
+          placeholder="Search by name, symbol, or address"
+          icon="search"
+          clearable
         />
-        <div class="flex-grow">
-          <div class="text-euler-dark-900 mb-2">
-            {{ opt.asset.name }}
+      </div>
+      <div class="flex-1 min-h-0 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          v-for="opt in filteredOptions"
+          :key="opt.asset.address"
+          class="flex items-center py-12 px-16 rounded-16 cursor-pointer"
+          :class="isSelected(opt.asset.address) ? 'bg-card-hover' : ''"
+          @click="handleSelect(opt)"
+        >
+          <AssetAvatar
+            :asset="opt.asset"
+            size="36"
+            class="mr-10"
+          />
+          <div class="flex-grow">
+            <div class="text-content-primary mb-2">
+              {{ opt.asset.name }}
+            </div>
+            <div class="text-h5">
+              {{ opt.asset.symbol }}
+            </div>
           </div>
-          <div class="text-h5">
-            {{ opt.asset.symbol }}
+          <div class="text-right">
+            <div class="text-content-primary mb-2">
+              Balance
+            </div>
+            <div class="text-h5">
+              {{ opt.balance > 0n ? formatNumber(opt.balanceFormatted, 6, 0) : '0' }}
+            </div>
           </div>
         </div>
-        <div class="text-right">
-          <div class="text-euler-dark-900 mb-2">
-            Balance
-          </div>
-          <div class="text-h5">
-            {{ opt.balance > 0n ? formatNumber(opt.balanceFormatted, 6, 0) : '0' }}
-          </div>
+        <!-- Custom token: loading -->
+        <div
+          v-if="isUnknownAddress && isCustomTokenLoading"
+          class="flex items-center justify-center py-24 gap-8 text-content-tertiary text-p3"
+        >
+          <UiLoader class="text-neutral-500" />
+          Looking up token...
         </div>
-      </div>
-      <!-- Custom token: loading -->
-      <div
-        v-if="isUnknownAddress && isCustomTokenLoading"
-        class="flex items-center justify-center py-24 gap-8 text-content-tertiary text-p3"
-      >
-        <UiLoader class="text-neutral-500" />
-        Looking up token...
-      </div>
 
-      <!-- Custom token: resolved -->
-      <div
-        v-else-if="isUnknownAddress && customToken"
-        class="flex items-center py-12 px-16 rounded-16 cursor-pointer hover:bg-euler-dark-600"
-        @click="handleSelectCustomToken"
-      >
-        <AssetAvatar
-          :asset="customToken"
-          size="36"
-          class="mr-10"
-        />
-        <div class="flex-grow">
-          <div class="flex items-center gap-6 mb-2">
-            <span class="text-euler-dark-900">{{ customToken.name }}</span>
-            <span class="inline-flex items-center rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5">
-              Import
-            </span>
+        <!-- Custom token: resolved -->
+        <div
+          v-else-if="isUnknownAddress && customToken"
+          class="flex items-center py-12 px-16 rounded-16 cursor-pointer hover:bg-surface-secondary"
+          @click="handleSelectCustomToken"
+        >
+          <AssetAvatar
+            :asset="customToken"
+            size="36"
+            class="mr-10"
+          />
+          <div class="flex-grow">
+            <div class="flex items-center gap-6 mb-2">
+              <span class="text-content-primary">{{ customToken.name }}</span>
+              <span class="inline-flex items-center rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5">
+                Import
+              </span>
+            </div>
+            <div class="text-h5">
+              {{ customToken.symbol }}
+            </div>
           </div>
-          <div class="text-h5">
-            {{ customToken.symbol }}
+          <div class="text-right">
+            <div class="text-content-primary mb-2">
+              Balance
+            </div>
+            <div class="text-h5">
+              {{ customTokenBalance > 0n ? formatNumber(nanoToValue(customTokenBalance, customToken.decimals), 6, 0) : '0' }}
+            </div>
           </div>
         </div>
-        <div class="text-right">
-          <div class="text-euler-dark-900 mb-2">
-            Balance
-          </div>
-          <div class="text-h5">
-            {{ customTokenBalance > 0n ? formatNumber(nanoToValue(customTokenBalance, customToken.decimals), 6, 0) : '0' }}
-          </div>
+
+        <!-- Custom token: error -->
+        <div
+          v-else-if="isUnknownAddress && customTokenError"
+          class="py-24 text-center text-content-tertiary text-p3"
+        >
+          {{ customTokenError }}
         </div>
-      </div>
 
-      <!-- Custom token: error -->
-      <div
-        v-else-if="isUnknownAddress && customTokenError"
-        class="py-24 text-center text-content-tertiary text-p3"
-      >
-        {{ customTokenError }}
-      </div>
-
-      <!-- No results (only when NOT resolving a custom address) -->
-      <div
-        v-if="!filteredOptions.length && searchQuery && !isUnknownAddress"
-        class="py-24 text-center text-content-tertiary text-p3"
-      >
-        No results found
+        <!-- No results (only when NOT resolving a custom address) -->
+        <div
+          v-if="!filteredOptions.length && searchQuery && !isUnknownAddress"
+          class="py-24 text-center text-content-tertiary text-p3"
+        >
+          No results found
+        </div>
       </div>
     </div>
   </BaseModalWrapper>

@@ -3,6 +3,7 @@ import { useAccount } from '@wagmi/vue'
 import { getAddress, type Address, zeroAddress } from 'viem'
 import { FixedPoint } from '~/utils/fixed-point'
 import type { Vault, VaultAsset } from '~/entities/vault'
+import type { SwapTokenSelectMeta } from '~/components/entities/asset/SwapTokenSelector.vue'
 import { getUtilisationWarning } from '~/composables/useVaultWarnings'
 import {
   getAssetOraclePrice,
@@ -12,6 +13,7 @@ import {
 import type { SwapApiQuote } from '~/entities/swap'
 import { SwapperMode } from '~/entities/swap'
 import { formatNumber, formatSmartAmount, formatHealthScore } from '~/utils/string-utils'
+import { formatLiquidationBuffer as formatLiqBuffer } from '~/utils/repayUtils'
 import { nanoToValue } from '~/utils/crypto-utils'
 import { useCollateralForm } from '~/composables/position/useCollateralForm'
 
@@ -22,6 +24,7 @@ const { eulerLensAddresses } = useEulerAddresses()
 
 // Withdraw-specific state
 const selectedOutputAsset = ref<VaultAsset | undefined>()
+const isUnknownSwapToken = ref(false)
 
 const needsSwap = computed(() => {
   if (!selectedOutputAsset.value || !form.asset.value) return false
@@ -46,10 +49,14 @@ const form = useCollateralForm({
     return FixedPoint.fromValue(conservativePriceRatio(collateralPrice, borrowPrice), 18)
   },
 
-  computeLiquidationPrice: (pos) => {
-    const price = pos.price || 0n
-    if (price <= 0n) return undefined
-    return nanoToValue(price, 18)
+  computeLiquidationPrice: (pos, borrowVault, collateralVault) => {
+    const health = nanoToValue(pos.health || 0n, 18)
+    if (health < 1) return undefined
+    const cp = borrowVault && collateralVault ? getCollateralOraclePrice(borrowVault, collateralVault) : undefined
+    const bp = borrowVault ? getAssetOraclePrice(borrowVault) : undefined
+    const ratio = nanoToValue(conservativePriceRatio(cp, bp), 18)
+    if (!ratio) return undefined
+    return ratio / health
   },
 
   validateEstimate: ({ suppliedFixed, amountFixed, userLtvFixed }) => {
@@ -122,6 +129,8 @@ const form = useCollateralForm({
     refreshAllPositions(eulerLensAddresses.value, address.value as string)
   },
 })
+useOperationGuard(computed(() => [form.collateralVault.value?.address, form.borrowVault.value?.address].filter(Boolean)))
+const pairAssetsLabel = usePositionPairLabel(form.position)
 
 // Withdraw-specific computeds
 const withdrawWarnings = computed(() => {
@@ -129,8 +138,9 @@ const withdrawWarnings = computed(() => {
   return [getUtilisationWarning(form.borrowVault.value, 'borrow')]
 })
 
-const onSelectOutputAsset = (newAsset: VaultAsset) => {
+const onSelectOutputAsset = (newAsset: VaultAsset, meta?: SwapTokenSelectMeta) => {
   selectedOutputAsset.value = newAsset
+  isUnknownSwapToken.value = meta?.isUnknownToken ?? false
   form.amount.value = ''
   form.clearSimulationError()
   form.resetSwapQuoteState()
@@ -161,7 +171,8 @@ watch(selectedOutputAsset, () => {
 
 <template>
   <VaultForm
-    title="Withdraw"
+    title="Withdraw collateral"
+    description="Remove collateral from your position. Your health score will decrease."
     :loading="form.isLoading.value"
     @submit.prevent="form.submit"
   >
@@ -169,6 +180,7 @@ watch(selectedOutputAsset, () => {
       <VaultLabelsAndAssets
         :vault="form.collateralVault.value"
         :assets="[form.asset.value]"
+        :assets-label="pairAssetsLabel"
         size="large"
       />
 
@@ -185,10 +197,7 @@ watch(selectedOutputAsset, () => {
           />
 
           <!-- Receive as token selector -->
-          <div
-            v-if="form.enableSwapDeposit"
-            class="flex items-center gap-8"
-          >
+          <div class="flex items-center gap-8">
             <span class="text-p3 text-content-tertiary">Receive as</span>
             <button
               type="button"
@@ -222,28 +231,16 @@ watch(selectedOutputAsset, () => {
             <VaultFormInfoBlock
               v-if="form.swapEstimatedOutput.value"
               :loading="form.isSwapQuoteLoading.value"
+              variant="card"
             >
-              <SummaryRow
-                label="Estimated output"
-                align-top
-              >
-                <p class="text-p2">
-                  ~{{ formatSmartAmount(form.swapEstimatedOutput.value) }} {{ selectedOutputAsset.symbol }}
-                </p>
-              </SummaryRow>
-              <SummaryRow label="Slippage tolerance">
-                <button
-                  type="button"
-                  class="flex items-center gap-6 text-p2"
-                  @click="form.openSlippageSettings"
-                >
-                  <span>{{ formatNumber(form.swapSlippage.value, 2, 0) }}%</span>
-                  <SvgIcon
-                    name="edit"
-                    class="!w-16 !h-16 text-accent-600"
-                  />
-                </button>
-              </SummaryRow>
+              <SwapDetailsSummary
+                :input-display="form.swapInputDisplay.value"
+                :output-display="form.swapOutputDisplay.value"
+                :price-impact="form.swapPriceImpact.value"
+                :slippage="form.swapSlippage.value"
+                :routed-via="form.swapRoutedVia.value"
+                @open-slippage-settings="form.openSlippageSettings"
+              />
             </VaultFormInfoBlock>
 
             <UiToast
@@ -254,6 +251,14 @@ watch(selectedOutputAsset, () => {
               size="compact"
             />
           </template>
+
+          <UiToast
+            v-if="isUnknownSwapToken && needsSwap"
+            title="Unknown token"
+            description="This token is not on any recognized token list. It could be fraudulent or malicious. Verify the contract address before proceeding."
+            variant="warning"
+            size="compact"
+          />
 
           <UiToast
             v-if="form.isGeoBlocked.value"
@@ -308,12 +313,20 @@ watch(selectedOutputAsset, () => {
               @invert="form.priceInvert.toggle"
             />
           </SummaryRow>
-          <SummaryRow label="Liquidation price">
+          <SummaryRow label="Liq. price">
             <SummaryPriceValue
-              :value="form.liquidationPrice.value != null ? formatSmartAmount(form.priceInvert.invertValue(form.liquidationPrice.value)!) : undefined"
+              :before="form.liquidationPrice.value != null ? formatSmartAmount(form.priceInvert.invertValue(form.liquidationPrice.value)!) : undefined"
+              :after="form.estimateLiquidationPrice.value != null ? formatSmartAmount(form.priceInvert.invertValue(form.estimateLiquidationPrice.value)!) : undefined"
               :symbol="form.priceInvert.displaySymbol"
               invertible
               @invert="form.priceInvert.toggle"
+            />
+          </SummaryRow>
+          <SummaryRow label="Liq. buffer">
+            <SummaryValue
+              :before="formatLiqBuffer(form.priceInvert.invertValue(form.priceFixed.value.toUnsafeFloat()), form.priceInvert.invertValue(form.liquidationPrice.value))"
+              :after="formatLiqBuffer(form.priceInvert.invertValue(form.priceFixed.value.toUnsafeFloat()), form.priceInvert.invertValue(form.estimateLiquidationPrice.value))"
+              suffix="%"
             />
           </SummaryRow>
           <SummaryRow label="LTV">
@@ -340,7 +353,7 @@ watch(selectedOutputAsset, () => {
             :disabled="form.submitDisabled.value"
             :loading="form.isSubmitting.value || form.isPreparing.value"
           >
-            {{ form.submitLabel.value }}
+            {{ form.submitLabel }}
           </VaultFormSubmit>
         </div>
       </div>

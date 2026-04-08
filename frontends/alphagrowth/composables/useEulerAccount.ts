@@ -9,20 +9,25 @@ import type { EulerLensAddresses } from '~/composables/useEulerAddresses'
 import type { AccountBorrowPosition } from '~/entities/account'
 import { normalizeAddressOrEmpty } from '~/utils/accountPositionHelpers'
 import { fetchAccountPositions, type SubgraphPositionEntry } from '~/utils/subgraph'
+import { logWarn } from '~/utils/errorHandling'
 
 const {
   depositPositions,
   borrowPositions,
-  collateralUsageSet,
   isPositionsLoading,
   isPositionsLoaded,
   isDepositsLoading,
   isDepositsLoaded,
   isShowAllPositions,
+  hiddenBorrowCount,
+  hiddenDepositCount,
   positionGuard,
   updateBorrowPositions,
   updateSavingsPositions,
+  clearPositions,
 } = useAccountPositions()
+
+let fetchInProgress = false
 
 const {
   totalSuppliedValue,
@@ -35,41 +40,49 @@ export const useEulerAccount = () => {
   const { isLoaded: isBalancesLoaded } = useWallets()
   const { eulerLensAddresses, isReady: isEulerLensAddressesReady, chainId } = useEulerAddresses()
   const { address } = useAccount()
-  const { public: { debugPortfolioAddress } } = useRuntimeConfig()
-  const normalizedDebugAddress = computed(() => normalizeAddressOrEmpty(debugPortfolioAddress as string | undefined))
-  const portfolioAddress = computed(() => normalizedDebugAddress.value || normalizeAddressOrEmpty(address.value))
-  const isDebugPortfolio = computed(() => Boolean(normalizedDebugAddress.value))
+  const { spyAddress } = useSpyMode()
+  const portfolioAddress = computed(() => normalizeAddressOrEmpty(spyAddress.value) || normalizeAddressOrEmpty(address.value))
 
   const updatePositions = async () => {
-    const gen = positionGuard.current()
-    const targetAddress = portfolioAddress.value
-    const shouldShowAll = isShowAllPositions.value || isDebugPortfolio.value
-    const { SUBGRAPH_URL } = useEulerConfig()
+    if (fetchInProgress) return
+    fetchInProgress = true
+    try {
+      const gen = positionGuard.current()
+      const targetAddress = portfolioAddress.value
+      const { SUBGRAPH_URL } = useEulerConfig()
 
-    // Fetch both borrow and deposit entries in a single subgraph query
-    const { borrows: borrowEntries, deposits: depositEntries } = targetAddress
-      ? await fetchAccountPositions(SUBGRAPH_URL, targetAddress)
-      : { borrows: [] as SubgraphPositionEntry[], deposits: [] as SubgraphPositionEntry[] }
+      // Fetch both borrow and deposit entries in a single subgraph query
+      const { borrows: borrowEntries, deposits: depositEntries } = targetAddress
+        ? await fetchAccountPositions(SUBGRAPH_URL, targetAddress)
+        : { borrows: [] as SubgraphPositionEntry[], deposits: [] as SubgraphPositionEntry[] }
 
-    // Discard if chain switched during subgraph fetch
-    if (positionGuard.isStale(gen)) return
+      // Discard if chain switched during subgraph fetch
+      if (positionGuard.isStale(gen)) return
 
-    // Borrow positions must be loaded first so deposits can filter against them
-    await updateBorrowPositions(
-      eulerLensAddresses.value,
-      targetAddress,
-      borrowEntries,
-      false,
-      { forceAllPositions: shouldShowAll },
-    )
-    await updateSavingsPositions(
-      eulerLensAddresses.value,
-      targetAddress,
-      depositEntries,
-      false,
-      { forceAllPositions: shouldShowAll },
-      gen,
-    )
+      // Borrow positions must be loaded first so deposits can filter against them
+      await updateBorrowPositions(
+        eulerLensAddresses.value,
+        targetAddress,
+        borrowEntries,
+      )
+      await updateSavingsPositions(
+        eulerLensAddresses.value,
+        targetAddress,
+        depositEntries,
+        false,
+        gen,
+      )
+    }
+    catch (error) {
+      logWarn('useEulerAccount/updatePositions', error)
+      isPositionsLoading.value = false
+      isPositionsLoaded.value = true
+      isDepositsLoading.value = false
+      isDepositsLoaded.value = true
+    }
+    finally {
+      fetchInProgress = false
+    }
   }
 
   const debouncedUpdatePositions = useDebounceFn(() => {
@@ -82,13 +95,22 @@ export const useEulerAccount = () => {
     debouncedUpdatePositions()
   }, { immediate: true })
 
-  watch(isShowAllPositions, () => {
-    debouncedUpdatePositions()
-  })
-
-  // Refresh positions when wallet address changes
+  // Refresh positions when wallet address changes (e.g. spy mode exit)
   watch(portfolioAddress, (newAddress, oldAddress) => {
     if (newAddress !== oldAddress) {
+      // Invalidate in-flight fetches so they discard stale results
+      positionGuard.next()
+      fetchInProgress = false
+
+      // Clear stale data and reset loading state so UI shows loader
+      clearPositions()
+      isPositionsLoaded.value = false
+      isPositionsLoading.value = true
+      isDepositsLoaded.value = false
+      isDepositsLoading.value = true
+      totalSuppliedValue.value = 0
+      totalBorrowedValue.value = 0
+
       debouncedUpdatePositions()
     }
   })
@@ -99,9 +121,7 @@ export const useEulerAccount = () => {
   // Clear stale positions and invalidate in-flight fetches on chain change
   watch(chainId, () => {
     positionGuard.next()
-    borrowPositions.value = []
-    depositPositions.value = []
-    collateralUsageSet.value = new Set()
+    clearPositions()
     isPositionsLoaded.value = false
     isPositionsLoading.value = true
     isDepositsLoaded.value = false
@@ -139,16 +159,30 @@ export const useEulerAccount = () => {
     lensAddresses: EulerLensAddresses,
     walletAddress: string,
   ) => {
-    const gen = positionGuard.current()
-    const { SUBGRAPH_URL } = useEulerConfig()
-    const { borrows: borrowEntries, deposits: depositEntries } = walletAddress
-      ? await fetchAccountPositions(SUBGRAPH_URL, walletAddress)
-      : { borrows: [] as SubgraphPositionEntry[], deposits: [] as SubgraphPositionEntry[] }
+    if (fetchInProgress) return
+    fetchInProgress = true
+    try {
+      const gen = positionGuard.current()
+      const { SUBGRAPH_URL } = useEulerConfig()
+      const { borrows: borrowEntries, deposits: depositEntries } = walletAddress
+        ? await fetchAccountPositions(SUBGRAPH_URL, walletAddress)
+        : { borrows: [] as SubgraphPositionEntry[], deposits: [] as SubgraphPositionEntry[] }
 
-    if (positionGuard.isStale(gen)) return
+      if (positionGuard.isStale(gen)) return
 
-    await updateBorrowPositions(lensAddresses, walletAddress, borrowEntries)
-    await updateSavingsPositions(lensAddresses, walletAddress, depositEntries, false, {}, gen)
+      await updateBorrowPositions(lensAddresses, walletAddress, borrowEntries)
+      await updateSavingsPositions(lensAddresses, walletAddress, depositEntries, false, gen)
+    }
+    catch (error) {
+      logWarn('useEulerAccount/refreshAllPositions', error)
+      isPositionsLoading.value = false
+      isPositionsLoaded.value = true
+      isDepositsLoading.value = false
+      isDepositsLoaded.value = true
+    }
+    finally {
+      fetchInProgress = false
+    }
   }
 
   return {
@@ -159,8 +193,9 @@ export const useEulerAccount = () => {
     isDepositsLoading,
     isDepositsLoaded,
     isShowAllPositions,
+    hiddenBorrowCount,
+    hiddenDepositCount,
     portfolioAddress,
-    isDebugPortfolio,
     refreshAllPositions,
     getPositionBySubAccountIndex,
     totalSuppliedValue,

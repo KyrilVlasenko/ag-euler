@@ -4,16 +4,15 @@ import { getAddress, formatUnits, type Address, zeroAddress } from 'viem'
 import { FixedPoint } from '~/utils/fixed-point'
 import { useModal } from '~/components/ui/composables/useModal'
 import { OperationReviewModal, SwapTokenSelector, SlippageSettingsModal } from '#components'
-import { useTermsOfUseGate } from '~/composables/useTermsOfUseGate'
 import { useToast } from '~/components/ui/composables/useToast'
 import {
   convertSharesToAssets,
-  isSecuritizeVault,
   fetchSecuritizeVault,
   type Vault,
   type SecuritizeVault,
   type VaultAsset,
 } from '~/entities/vault'
+import { isSecuritizeVault } from '~/entities/vault/factory'
 import { getSubAccountAddress } from '~/entities/account'
 import { getUtilisationWarning } from '~/composables/useVaultWarnings'
 import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
@@ -22,26 +21,31 @@ import { useSwapQuotesParallel } from '~/composables/useSwapQuotesParallel'
 import { SwapperMode } from '~/entities/swap'
 import { buildSwapRouteItems } from '~/utils/swapRouteItems'
 import { formatNumber, formatSmartAmount } from '~/utils/string-utils'
+import { useSwapPriceImpact } from '~/composables/useSwapPriceImpact'
+import { usePriceImpactGate } from '~/composables/usePriceImpactGate'
 import { nanoToValue } from '~/utils/crypto-utils'
+import { isOperationBlocked } from '~/utils/operationGuardRegistry'
 
 const router = useRouter()
 const route = useRoute()
 const modal = useModal()
 const { error } = useToast()
-const { getSubmitLabel, getSubmitDisabled, guardWithTerms } = useTermsOfUseGate()
-const reviewWithdrawLabel = getSubmitLabel('Review Withdraw')
 const { buildWithdrawPlan, buildRedeemPlan, buildWithdrawAndSwapPlan, buildRedeemAndSwapPlan, executeTxPlan } = useEulerOperations()
 const { getVault, getSecuritizeVault: _getSecuritizeVault, getEscrowVault: _getEscrowVault } = useVaults()
 const { isConnected, address } = useAccount()
+const { isSpyMode, spyAddress } = useSpyMode()
+const effectiveAddress = computed(() => isSpyMode.value ? spyAddress.value : address.value)
 const { fetchVaultShareBalance } = useWallets()
 const { runSimulation, simulationError, clearSimulationError } = useTxPlanSimulation()
 const { getSupplyRewardApy } = useRewardsApy()
 const { withIntrinsicSupplyApy } = useIntrinsicApy()
 const vaultAddress = route.params.vault as string
+useOperationGuard([vaultAddress])
 const subAccountIndex = Number(route.params.subAccount)
 const subAccount = computed(() => {
-  if (!address.value || isNaN(subAccountIndex)) return undefined
-  return getSubAccountAddress(address.value, subAccountIndex)
+  const addr = effectiveAddress.value
+  if (!addr || isNaN(subAccountIndex)) return undefined
+  return getSubAccountAddress(addr, subAccountIndex)
 })
 
 const isLoading = ref(false)
@@ -67,8 +71,8 @@ const estimateSupplyAPY = ref(0n)
 const estimatesError = ref('')
 
 // Withdraw & swap state
-const { enableSwapDeposit } = useDeployConfig()
 const selectedOutputAsset = ref<VaultAsset | undefined>()
+const isUnknownSwapToken = ref(false)
 const needsSwap = computed(() => {
   if (!selectedOutputAsset.value || !asset.value) return false
   try {
@@ -108,7 +112,7 @@ const isSubmitDisabled = computed(() => {
   if (needsSwap.value && !swapEffectiveQuote.value && !isSwapQuoteLoading.value) return true
   return false
 })
-const reviewWithdrawDisabled = getSubmitDisabled(isSubmitDisabled)
+const reviewWithdrawDisabled = isSubmitDisabled
 const supplyAPYDisplay = computed(() => {
   if (!vault.value) return '0.00'
   const base = withIntrinsicSupplyApy(nanoToValue(vault.value.interestRateInfo.supplyAPY, 25), vault.value.asset.address)
@@ -140,6 +144,34 @@ const swapEstimatedOutput = computed(() => {
   const amountOut = BigInt(swapEffectiveQuote.value.amountOut || 0)
   if (amountOut <= 0n) return ''
   return formatUnits(amountOut, Number(selectedOutputAsset.value.decimals))
+})
+
+const swapInputDisplay = computed(() => {
+  if (!swapEffectiveQuote.value || !asset.value) return ''
+  const amountIn = BigInt(swapEffectiveQuote.value.amountIn || 0)
+  if (amountIn <= 0n) return ''
+  return `${formatSmartAmount(formatUnits(amountIn, Number(asset.value.decimals)))} ${asset.value.symbol}`
+})
+
+const swapOutputDisplay = computed(() => {
+  if (!swapEffectiveQuote.value || !selectedOutputAsset.value) return ''
+  const amountOut = BigInt(swapEffectiveQuote.value.amountOut || 0)
+  if (amountOut <= 0n) return ''
+  return `${formatSmartAmount(formatUnits(amountOut, Number(selectedOutputAsset.value.decimals)))} ${selectedOutputAsset.value.symbol}`
+})
+
+const swapRoutedVia = computed(() => {
+  if (!swapEffectiveQuote.value?.route?.length) return null
+  return swapEffectiveQuote.value.route.map((r: { providerName: string }) => r.providerName).join(', ')
+})
+
+const { priceImpact: swapPriceImpact } = useSwapPriceImpact({
+  quote: swapEffectiveQuote,
+  fromVault: vault,
+})
+
+const { guardWithPriceImpact } = usePriceImpactGate({
+  directPriceImpact: swapPriceImpact,
 })
 
 const swapRouteItems = computed(() => {
@@ -195,8 +227,9 @@ const requestSwapQuote = useDebounceFn(async () => {
   })
 }, 500)
 
-const onSelectOutputAsset = (newAsset: VaultAsset) => {
+const onSelectOutputAsset = (newAsset: VaultAsset, meta?: { isUnknownToken?: boolean }) => {
   selectedOutputAsset.value = newAsset
+  isUnknownSwapToken.value = meta?.isUnknownToken ?? false
   amount.value = ''
   clearSimulationError()
   resetSwapQuoteState()
@@ -207,6 +240,7 @@ const openSwapTokenSelector = () => {
     props: {
       currentAssetAddress: selectedOutputAsset.value?.address || asset.value?.address,
       onSelect: onSelectOutputAsset,
+      mode: 'output' as const,
     },
   })
 }
@@ -256,7 +290,7 @@ const fetchShareBalance = async () => {
   sharesBalance.value = await fetchVaultShareBalance(vault.value.address, subAccount.value)
 }
 const updateBalance = async () => {
-  if (!isConnected.value || sharesBalance.value === 0n) {
+  if ((!isConnected.value && !isSpyMode.value) || sharesBalance.value === 0n) {
     assetsBalance.value = 0n
     delta.value = 0n
     return
@@ -270,10 +304,11 @@ const updateBalance = async () => {
   delta.value = assetsBalance.value
 }
 const submit = async () => {
+  if (isOperationBlocked.value) return
   if (isPreparing.value) return
   isPreparing.value = true
   try {
-    await guardWithTerms(async () => {
+    await guardWithPriceImpact(async () => {
       if (!asset.value?.address) {
         return
       }
@@ -422,13 +457,7 @@ const updateEstimates = useDebounceFn(async () => {
 
 load()
 
-watch(isConnected, async () => {
-  if (vault.value) {
-    await fetchShareBalance()
-    await updateBalance()
-  }
-})
-watch(address, async () => {
+watch([isConnected, effectiveAddress], async () => {
   if (vault.value) {
     await fetchShareBalance()
     await updateBalance()
@@ -474,7 +503,8 @@ watch(swapSelectedQuote, () => {
 
 <template>
   <VaultForm
-    title="Withdraw"
+    title="Withdraw savings"
+    description="Withdraw your supplied assets back to your wallet."
     class="flex flex-col gap-16"
     :loading="isLoading"
     @submit.prevent="submit"
@@ -499,14 +529,11 @@ watch(swapSelectedQuote, () => {
           />
 
           <!-- Receive as token selector -->
-          <div
-            v-if="enableSwapDeposit"
-            class="flex items-center gap-8"
-          >
+          <div class="flex items-center gap-8">
             <span class="text-p3 text-content-tertiary">Receive as</span>
             <button
               type="button"
-              class="flex items-center gap-6 bg-euler-dark-500 text-p3 font-semibold px-12 h-36 rounded-[40px] whitespace-nowrap"
+              class="flex items-center gap-6 bg-card text-p3 font-semibold px-12 h-36 rounded-[40px] whitespace-nowrap"
               @click="openSwapTokenSelector"
             >
               <AssetAvatar
@@ -515,7 +542,7 @@ watch(swapSelectedQuote, () => {
               />
               {{ selectedOutputAsset?.symbol || asset.symbol }}
               <SvgIcon
-                class="text-euler-dark-800 !w-16 !h-16"
+                class="text-content-tertiary !w-16 !h-16"
                 name="arrow-down"
               />
             </button>
@@ -536,28 +563,16 @@ watch(swapSelectedQuote, () => {
             <VaultFormInfoBlock
               v-if="swapEstimatedOutput"
               :loading="isSwapQuoteLoading"
+              variant="card"
             >
-              <SummaryRow
-                label="Estimated output"
-                align-top
-              >
-                <p class="text-p2">
-                  ~{{ formatSmartAmount(swapEstimatedOutput) }} {{ selectedOutputAsset.symbol }}
-                </p>
-              </SummaryRow>
-              <SummaryRow label="Slippage tolerance">
-                <button
-                  type="button"
-                  class="flex items-center gap-6 text-p2"
-                  @click="openSlippageSettings"
-                >
-                  <span>{{ formatNumber(swapSlippage, 2, 0) }}%</span>
-                  <SvgIcon
-                    name="edit"
-                    class="!w-16 !h-16 text-accent-600"
-                  />
-                </button>
-              </SummaryRow>
+              <SwapDetailsSummary
+                :input-display="swapInputDisplay"
+                :output-display="swapOutputDisplay"
+                :price-impact="swapPriceImpact"
+                :slippage="swapSlippage"
+                :routed-via="swapRoutedVia"
+                @open-slippage-settings="openSlippageSettings"
+              />
             </VaultFormInfoBlock>
 
             <UiToast
@@ -568,6 +583,14 @@ watch(swapSelectedQuote, () => {
               size="compact"
             />
           </template>
+
+          <UiToast
+            v-if="isUnknownSwapToken && needsSwap"
+            title="Unknown token"
+            description="This token is not on any recognized token list. It could be fraudulent or malicious. Verify the contract address before proceeding."
+            variant="warning"
+            size="compact"
+          />
 
           <UiToast
             v-show="estimatesError"
@@ -601,7 +624,7 @@ watch(swapSelectedQuote, () => {
           </SummaryRow>
           <SummaryRow
             v-if="!isSecuritizeVaultType"
-            label="Deposit"
+            label="Supplied"
           >
             <SummaryValue
               :before="`$${formatNumber(assetsBalanceUsd)}`"
@@ -627,7 +650,7 @@ watch(swapSelectedQuote, () => {
             :loading="isSubmitting || isPreparing"
             :disabled="reviewWithdrawDisabled"
           >
-            {{ reviewWithdrawLabel }}
+            Review Withdraw
           </VaultFormSubmit>
         </div>
       </div>

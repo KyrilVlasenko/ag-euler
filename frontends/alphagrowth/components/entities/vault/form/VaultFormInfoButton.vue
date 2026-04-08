@@ -13,6 +13,7 @@ const isSecuritize = (v: Vault | SecuritizeVault | undefined): v is SecuritizeVa
 const onClick = () => {
   modal.open(VaultOverviewModal, {
     props: {
+      title: 'Vault information',
       pair: pair,
       vault: isSecuritize(vault) ? undefined : vault,
       securitizeVault: isSecuritize(vault) ? vault : undefined,

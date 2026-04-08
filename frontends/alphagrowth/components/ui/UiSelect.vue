@@ -207,12 +207,12 @@ const open = () => {
       background: var(--ui-select-chip-active-background-color);
       color: var(--ui-select-chip-active-color);
       border-color: transparent;
-      box-shadow: 0 1px 3px rgba(196, 155, 100, 0.3);
+      box-shadow: var(--accent-shadow-md);
 
       &:hover {
         background: var(--accent-600);
         border-color: transparent;
-        box-shadow: 0 2px 6px rgba(196, 155, 100, 0.4);
+        box-shadow: var(--accent-shadow-lg);
       }
     }
   }

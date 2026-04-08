@@ -48,7 +48,7 @@ The application follows Vue 3's Composition API pattern, organizing code into lo
 ├─────────────────────────────────────────────────────────────────┤
 │                        Entities                                 │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                │
-│  │   Vault     │ │   Account   │ │   Merkl     │                │
+│  │   Vault     │ │   Account   │ │  Rewards    │                │
 │  └─────────────┘ └─────────────┘ └─────────────┘                │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -176,18 +176,26 @@ The application follows Vue 3's Composition API pattern, organizing code into lo
 ├─────────────────────────────────────────────────────────────────┤
 │                    Integration Layer                            │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                │
-│  │ Euler API   │ │ Wagmi/Viem  │ │ Rewards API │                │
-│  │ Client      │ │ Client      │ │ Client      │                │
+│  │ Wagmi/Viem  │ │ Rewards API │ │ Composables │                │
+│  │ Client      │ │ Client      │ │             │                │
+│  └─────────────┘ └─────────────┘ └─────────────┘                │
+├─────────────────────────────────────────────────────────────────┤
+│              Server-Side Proxy Layer (Nuxt server/)             │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                │
+│  │ /api/token  │ │ /api/pyth   │ │ /api/labels │                │
+│  │ -list       │ │ /updates    │ │ /rpc/[chain]│                │
 │  └─────────────┘ └─────────────┘ └─────────────┘                │
 ├─────────────────────────────────────────────────────────────────┤
 │                    External Services                            │
 │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐                │
-│  │ Euler       │ │ EVM RPC     │ │ Merkl /     │                │
-│  │ Finance     │ │ (multi-     │ │ Brevis      │                │
-│  │             │ │  chain)     │ │ Rewards     │                │
+│  │ Euler API / │ │ EVM RPC     │ │ Merkl /     │                │
+│  │ Pyth Hermes │ │ (multi-     │ │ Brevis /    │                │
+│  │ / DefiLlama │ │  chain)     │ │ Fuul        │                │
 │  └─────────────┘ └─────────────┘ └─────────────┘                │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**Server-Side Proxy Layer**: External data sources (token lists, Pyth Hermes, labels, oracle checks, RPC) are proxied through Nuxt server endpoints rather than called directly from the browser. This provides caching, rate limiting, CORS avoidance, and keeps credentials server-side. See [Development Guide - Server-Side Data Proxies](./development-guide.md#server-side-data-proxies) for the full endpoint reference.
 
 ## 🔍 Explore Page & Market Discovery
 
@@ -239,9 +247,20 @@ This prevents re-fetching and re-rendering when users navigate between listing p
 5. **Batch Operations**: Batch API calls to reduce network overhead
 6. **Debouncing**: User input and position refresh debouncing to prevent excessive API calls
 7. **Keepalive**: Listing pages cached in memory to avoid redundant data loads
-8. **Lazy Chart Loading**: chart.js is lazy-loaded only when chart components are mounted
+8. **Lazy Chart Loading**: Chart.js is lazy-loaded only when chart components are mounted. Chart colors are read from CSS custom properties via the `useThemeColors` composable (reads `document.body` computed styles, reactive to `useTheme()`), so charts automatically follow the theme
 9. **Interval Cleanup**: All `setInterval` timers are properly cleaned up to prevent memory leaks
 10. **shallowRef**: Collection data (arrays, maps) uses `shallowRef` instead of `ref` to avoid deep reactivity overhead
+
+## 🔄 Swap & Slippage Behavior
+
+### Slippage Settings
+
+The `useSlippage` composable (`composables/useSlippage.ts`) manages swap slippage tolerance with two safety features:
+
+- **24-hour expiry**: Custom slippage values above 0.5% automatically expire after 24 hours, reverting to the default. This prevents users from forgetting high slippage settings across sessions. Values at or below 0.5% never expire.
+- **Stablecoin defaults**: Swaps between two stablecoins (detected by "USD" in the token symbol) default to 0.1% slippage instead of the general 0.5% default, reducing unnecessary losses on stable-to-stable pairs.
+
+The composable accepts optional `fromSymbol`/`toSymbol` getters to detect stablecoin pairs reactively. Slippage state is persisted to `localStorage` with a timestamp for expiry tracking.
 
 ## 🔒 Security Architecture
 
@@ -252,6 +271,41 @@ This prevents re-fetching and re-rendering when users navigate between listing p
 3. **Secure Communication**: HTTPS for all external communications
 4. **Wallet Security**: Secure wallet connection and transaction signing
 5. **Error Handling**: Secure error messages that don't leak sensitive information
+
+### Server-Side API Protection
+
+The Nuxt server layer (`server/api/`) proxies requests to external services (RPC nodes, Tenderly, TRM) to keep operator API keys out of client bundles. Several layers protect these endpoints:
+
+| Layer | Purpose |
+|---|---|
+| **CORS** (`server/middleware/cors.ts`) | Restricts API access to configured origins |
+| **Body size limits** (`server/middleware/body-limit.ts`) | Caps request payloads (1 MB RPC, 2 MB Tenderly) |
+| **Geo-blocking** (`server/middleware/geo-gate.ts`) | Blocks sanctioned countries via Cloudflare headers |
+| **RPC method whitelist** (`server/api/rpc/[chainId].ts`) | Only 16 safe read/send methods are proxied |
+| **Rate limiting** (`server/utils/rate-limit.ts`) | Per-IP cost-based budgets (see below) |
+| **Swap verifier validation** (`utils/swap-validation.ts`) | Validates swap verifier addresses against known config |
+
+#### Rate Limiting
+
+The app includes a built-in per-IP rate limiter as a defense-in-depth measure. Default budgets per 60-second window:
+
+- **RPC proxy**: 10,000 units (batch of N costs N)
+- **All other proxies**: 1,000 requests (token list, Pyth updates, labels, oracle adapter, euler chains, intrinsic APY, TOS)
+- **Tenderly simulate**: 10 requests
+- **Address screening**: 10 requests
+
+**Important**: This is a best-effort safeguard, not a security boundary. It catches accidental abuse (e.g. a client stuck in a retry loop) but will not stop a determined attacker. Known limitations:
+
+- **In-memory state is per-process** — if Nitro spawns multiple workers, each gets its own budget, effectively multiplying the limit.
+- **IP detection depends on the network layer** — behind Cloudflare, the limiter uses `CF-Connecting-IP` (reliable, not spoofable). Without a trusted reverse proxy, it falls back to `X-Forwarded-For`, which is client-controlled and trivially spoofable.
+
+#### Deployment Recommendations
+
+For production, operators should run the app behind a reverse proxy that handles rate limiting at the infrastructure level:
+
+- **Cloudflare**: Recommended. Provides rate limiting, DDoS protection, geo-headers, and a trustworthy `CF-Connecting-IP` header out of the box.
+- **Nginx / Caddy / HAProxy**: Configure `limit_req` (Nginx) or equivalent, and ensure the proxy forwards the real client IP in a header the app can trust.
+- **No reverse proxy**: The built-in rate limiter still provides basic protection against casual abuse, but should not be relied upon as the sole defense for API keys and upstream service quotas.
 
 ## 📱 Mobile-First Architecture
 

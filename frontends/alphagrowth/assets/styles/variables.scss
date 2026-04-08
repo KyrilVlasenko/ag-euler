@@ -3,11 +3,45 @@
   --brand-hue: 211deg;
   --brand-accent-hue: calc(var(--brand-hue) - 45deg);
 
-  // ============================================
-  // INSTITUTIONAL COLOR PALETTE
-  // ============================================
+  // ════════════════════════════════════════════════════════════════
+  //
+  //   THEME CONFIGURATION
+  //
+  //   To restyle this app, change the values in this section.
+  //   Every color in the UI derives from them automatically.
+  //
+  //   When you change a hex color, update its matching --*-rgb
+  //   variable too (used for alpha/opacity effects).
+  //
+  //   Dark-theme overrides are at the bottom of this file
+  //   under [data-theme="dark"].
+  //
+  // ════════════════════════════════════════════════════════════════
 
-  // Primary - Professional Navy
+  // — Brand Accent (buttons, links, focus rings, highlights) ——————
+  --accent-100: #e6faf5;
+  --accent-300: #0A0A0A;
+  --accent-400: #0A0A0A;
+  --accent-500: #0A0A0A;
+  --accent-600: #0A0A0A;
+  --accent-700: #0A0A0A;
+  --accent-rgb: 28, 153, 124;          // ← RGB of --accent-500
+
+  // — Status Colors ———————————————————————————————————————————————
+  --success-rgb: 98, 173, 79;
+  --success-100: rgba(var(--success-rgb), 0.2);
+  --success-500: #62ad4f;
+  --success-600: #4e8a3f;
+
+  --warning-rgb: 236, 192, 51;
+  --warning-100: rgba(var(--warning-rgb), 0.2);
+  --warning-500: #ecc033;
+
+  --error-rgb: 192, 39, 35;
+  --error-100: rgba(var(--error-rgb), 0.2);
+  --error-500: #c02723;
+
+  // — Primary Palette (Navy) —————————————————————————————————————
   --primary-50: #f0f4f8;
   --primary-100: #d9e2ec;
   --primary-200: #bcccdc;
@@ -19,14 +53,7 @@
   --primary-800: #243b53;
   --primary-900: #102a43;
 
-  // Accent - Sophisticated Gold/Bronze (for CTAs, APY highlights)
-  --accent-300: #0A0A0A;
-  --accent-400: #0A0A0A;
-  --accent-500: #0A0A0A;
-  --accent-600: #0A0A0A;
-  --accent-700: #0A0A0A;
-
-  // Neutral - Warm Grays
+  // — Neutral Palette —————————————————————————————————————————————
   --neutral-50: #fafafa;
   --neutral-100: #f5f5f5;
   --neutral-200: #e5e5e5;
@@ -48,7 +75,7 @@
   --error-500: #dc2626;
 
   // ============================================
-  // SHADOW SYSTEM (Apple-like depth)
+  // SHADOW SYSTEM
   // ============================================
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -63,8 +90,17 @@
   --shadow-card: var(--shadow-sm);
   --shadow-card-hover: var(--shadow-md);
 
+  // Accent-colored shadows (auto-derived from --accent-rgb)
+  --accent-glow: 0 0 0 3px rgba(var(--accent-rgb), 0.15), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --accent-shadow-sm: 0 1px 2px rgba(var(--accent-rgb), 0.3);
+  --accent-shadow-md: 0 1px 3px rgba(var(--accent-rgb), 0.3);
+  --accent-shadow-lg: 0 2px 6px rgba(var(--accent-rgb), 0.4);
+
+  // Focus ring — accent-derived for visual consistency
+  --focus-ring: var(--accent-500);
+
   // ============================================
-  // ANIMATION TIMING (Apple-style)
+  // ANIMATION TIMING
   // ============================================
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
@@ -76,7 +112,7 @@
   --duration-slow: 350ms;
 
   // ============================================
-  // BORDER RADIUS (Refined, Apple-like)
+  // BORDER RADIUS
   // ============================================
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -86,7 +122,34 @@
   --radius-full: 9999px;
 
   // ============================================
-  // LEGACY COLORS (kept for compatibility)
+  // CHART COLORS (for Chart.js canvas rendering)
+  // Read these via getComputedStyle in JavaScript.
+  // ============================================
+  --chart-line-a: #62ad4f;
+  --chart-fill-a: rgba(98, 173, 79, 0.15);
+  --chart-line-b: #1c997c;
+  --chart-fill-b: rgba(28, 153, 124, 0.15);
+  --chart-text: #737373;
+  --chart-text-muted: #525252;
+  --chart-grid: #f5f5f5;
+  --chart-axis: #e5e5e5;
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.95);
+  --chart-tooltip-border: #e5e5e5;
+  --chart-tooltip-text: #262626;
+  --chart-tooltip-text-muted: #525252;
+  --chart-annotation-line: #262626;
+  --chart-annotation-bg: rgba(82, 82, 82, 0.85);
+  --chart-annotation-text: #ffffff;
+
+  // ============================================
+  // GRAPH COLORS (for SVG topology visualizations)
+  // ============================================
+  --graph-edge: #4b5563;
+  --graph-edge-mutual: #6b7280;
+  --graph-node-bg: #1f2937;
+  --graph-node-border: #4b5563;
+  --graph-node-text: #ffffff;
+
   // ============================================
   --white: 255, 255, 255;
   --black: 0, 0, 0;
@@ -324,6 +387,15 @@
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.5);
 
+  // Accent-colored shadows
+  --accent-glow: 0 0 0 3px rgba(var(--accent-rgb), 0.2), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --accent-shadow-sm: 0 1px 2px rgba(var(--accent-rgb), 0.35);
+  --accent-shadow-md: 0 1px 3px rgba(var(--accent-rgb), 0.35);
+  --accent-shadow-lg: 0 2px 6px rgba(var(--accent-rgb), 0.45);
+
+  // Focus ring — brand yellow for high visibility
+  --focus-ring: #ecc033;
+
   // Skeleton for dark mode
   --skeleton-background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0) 50%);
   --skeleton-background-gray: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0) 50%);
@@ -339,4 +411,28 @@
   --euler-dark-800: 0 0% 50%;
   --euler-dark-900: 0 0% 70%;
   --euler-dark-1000: 0 0% 98%;
+
+    // Chart colors (dark theme)
+  --chart-line-a: #62ad4f;
+  --chart-fill-a: rgba(98, 173, 79, 0.15);
+  --chart-line-b: #2ae5b9;
+  --chart-fill-b: rgba(42, 229, 185, 0.15);
+  --chart-text: #a1acb8;
+  --chart-text-muted: #728395;
+  --chart-grid: rgba(255, 255, 255, 0.04);
+  --chart-axis: rgba(255, 255, 255, 0.08);
+  --chart-tooltip-bg: rgba(12, 29, 47, 0.95);
+  --chart-tooltip-border: #14304e;
+  --chart-tooltip-text: #f7f7f8;
+  --chart-tooltip-text-muted: #a1acb8;
+  --chart-annotation-line: #a1acb8;
+  --chart-annotation-bg: rgba(20, 48, 78, 0.85);
+  --chart-annotation-text: #ffffff;
+
+  // Graph colors (dark theme)
+  --graph-edge: #435971;
+  --graph-edge-mutual: #728395;
+  --graph-node-bg: #0c1d2f;
+  --graph-node-border: #435971;
+  --graph-node-text: #f7f7f8;
 }

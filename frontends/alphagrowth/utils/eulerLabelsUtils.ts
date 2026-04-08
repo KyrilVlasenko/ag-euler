@@ -14,21 +14,29 @@ import {
   earnVaultBlocks,
   earnVaultRestrictions,
   featuredEarnVaults,
+  deprecatedEarnVaults,
+  earnVaultDescriptions,
+  earnVaultNotices,
+  notExplorableEarnVaults,
 } from '~/utils/eulerLabelsState'
 
 // ── Normalization helpers ────────────────────────────────────
 
 export const extractVaultOverrides = (raw: Record<string, unknown>): Record<string, EulerLabelVaultOverride> => {
   const overrides: Record<string, EulerLabelVaultOverride> = {}
-  for (const [key, value] of Object.entries(raw)) {
+  for (const [key, value] of Object.entries(raw.vaultOverrides || {})) {
     if (!key.startsWith('0x') || typeof value !== 'object' || value === null) continue
     const entry = value as Record<string, unknown>
     const override: EulerLabelVaultOverride = {}
     if (typeof entry.description === 'string') override.description = entry.description
+    if (typeof entry.portfolioNotice === 'string') override.portfolioNotice = entry.portfolioNotice
     const reason = entry.deprecationReason ?? entry.deprecateReason
     if (typeof reason === 'string') override.deprecationReason = reason
     if (Array.isArray(entry.block)) override.block = entry.block.filter((v): v is string => typeof v === 'string')
     if (Array.isArray(entry.restricted)) override.restricted = entry.restricted.filter((v): v is string => typeof v === 'string')
+    if (typeof entry.notExplorableLend === 'boolean') override.notExplorableLend = entry.notExplorableLend
+    if (typeof entry.notExplorableBorrow === 'boolean') override.notExplorableBorrow = entry.notExplorableBorrow
+    if (typeof entry.keyring === 'boolean') override.keyring = entry.keyring
     if (Object.keys(override).length > 0) {
       overrides[normalizeAddress(key)] = override
     }
@@ -154,11 +162,87 @@ export const isVaultFeatured = (vaultAddress: string): boolean => {
   return featuredEarnVaults.has(normalized)
 }
 
+export const isEarnVaultDeprecated = (vaultAddress: string): boolean => {
+  const normalized = normalizeAddress(vaultAddress)
+  return normalized.toLowerCase() in deprecatedEarnVaults
+}
+
+export const isEarnVaultNotExplorable = (vaultAddress: string): boolean => {
+  const normalized = normalizeAddress(vaultAddress)
+  return notExplorableEarnVaults.has(normalized.toLowerCase())
+}
+
+export const getEarnVaultDeprecationReason = (vaultAddress: string): string => {
+  const normalized = normalizeAddress(vaultAddress)
+  return deprecatedEarnVaults[normalized.toLowerCase()] ?? ''
+}
+
+export const getEarnVaultDescription = (vaultAddress: string): string => {
+  const normalized = normalizeAddress(vaultAddress)
+  return earnVaultDescriptions[normalized.toLowerCase()] ?? ''
+}
+
+export const getEarnVaultNotice = (vaultAddress: string): string => {
+  const normalized = normalizeAddress(vaultAddress)
+  return earnVaultNotices[normalized.toLowerCase()] ?? ''
+}
+
+export const getVaultNotice = (vaultAddress: string): string => {
+  const earnNotice = getEarnVaultNotice(vaultAddress)
+  if (earnNotice) return earnNotice
+
+  const normalized = normalizeAddress(vaultAddress)
+  const product = getProductByVault(normalized)
+  const override = product.vaultOverrides?.[normalized]
+  if (override?.portfolioNotice !== undefined) return override.portfolioNotice
+
+  return product.portfolioNotice ?? ''
+}
+
+/** Returns true when the notice is vault-specific (earn entry or vault override), false when product-level */
+export const isVaultNoticeSpecific = (vaultAddress: string): boolean => {
+  if (getEarnVaultNotice(vaultAddress)) return true
+  const normalized = normalizeAddress(vaultAddress)
+  const product = getProductByVault(normalized)
+  return product.vaultOverrides?.[normalized]?.portfolioNotice !== undefined
+}
+
 export const isVaultDeprecated = (vaultAddress: string): boolean => {
   const normalized = normalizeAddress(vaultAddress)
+  if (normalized.toLowerCase() in deprecatedEarnVaults) return true
   return Object.values(products).some(product =>
     product.deprecatedVaults?.includes(normalized) ?? false,
   )
+}
+
+export const isVaultNotExplorable = (vaultAddress: string): boolean => {
+  const product = getProductByVault(vaultAddress)
+  return product.notExplorable === true
+}
+
+export const isVaultNotExplorableLend = (vaultAddress: string): boolean => {
+  const product = getProductByVault(vaultAddress)
+  if (product.notExplorable === true) return true
+  const override = product.vaultOverrides?.[normalizeAddress(vaultAddress)]
+  return override?.notExplorableLend === true
+}
+
+export const isVaultNotExplorableBorrow = (vaultAddress: string): boolean => {
+  const product = getProductByVault(vaultAddress)
+  if (product.notExplorable === true) return true
+  const override = product.vaultOverrides?.[normalizeAddress(vaultAddress)]
+  return override?.notExplorableBorrow === true
+}
+
+export const isVaultKeyring = (vaultAddress: string): boolean => {
+  const product = getProductByVault(vaultAddress)
+  if (product.keyring === true) return true
+  const override = product.vaultOverrides?.[normalizeAddress(vaultAddress)]
+  return override?.keyring === true
+}
+
+export const isProductKeyring = (productKey: string): boolean => {
+  return products[productKey]?.keyring === true
 }
 
 export const getEntitiesByVault = (vault: Vault) => {
@@ -194,6 +278,7 @@ export const applyVaultOverrides = (product: EulerLabelProduct, vaultAddress: st
   return {
     ...product,
     ...(override.description !== undefined && { description: override.description }),
+    ...(override.portfolioNotice !== undefined && { portfolioNotice: override.portfolioNotice }),
     ...(override.deprecationReason !== undefined && { deprecationReason: override.deprecationReason }),
   }
 }

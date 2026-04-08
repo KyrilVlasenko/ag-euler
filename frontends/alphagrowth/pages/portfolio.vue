@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useAccount } from '@wagmi/vue'
 import { formatNumber, formatCompactUsdValue } from '~/utils/string-utils'
-import { POLL_INTERVAL_10S_MS } from '~/entities/tuning-constants'
+import { POLL_INTERVAL_30S_MS } from '~/entities/tuning-constants'
 
 defineOptions({
   name: 'PortfolioPage',
@@ -25,6 +25,8 @@ const { locks } = useREULLocks()
 const { isConnected, address } = useAccount()
 const { isLoaded: isBalancesLoaded, updateBalances } = useWallets()
 const { eulerLensAddresses } = useEulerAddresses()
+const { portfolioRefreshCounter } = usePortfolioRefresh()
+const { isSpyMode, spyAddress } = useSpyMode()
 
 const interval: Ref<NodeJS.Timeout | null> = ref(null)
 
@@ -55,20 +57,32 @@ const checkTab = () => {
 }
 
 const updatePositions = async () => {
-  await refreshAllPositions(eulerLensAddresses.value, address.value as string)
+  const targetAddress = isSpyMode.value ? spyAddress.value : address.value
+  if (!targetAddress) return
+  await refreshAllPositions(eulerLensAddresses.value, targetAddress)
 }
 
 watch(tabsModel, checkTab, { immediate: true })
+const isActive = ref(false)
+
 onActivated(async () => {
+  isActive.value = true
   checkTab()
   await updateBalances()
   updatePositions()
-  interval.value = setInterval(updatePositions, POLL_INTERVAL_10S_MS)
+  interval.value = setInterval(updatePositions, POLL_INTERVAL_30S_MS)
 })
 onDeactivated(() => {
+  isActive.value = false
   if (interval.value) {
     clearInterval(interval.value)
     interval.value = null
+  }
+})
+
+watch(portfolioRefreshCounter, () => {
+  if (isActive.value) {
+    updatePositions()
   }
 })
 </script>
@@ -83,7 +97,7 @@ onDeactivated(() => {
         <span class="text-h6 text-content-secondary">Show all</span>
         <UiFootnote
           title="Show all"
-          text="When enabled, shows positions and deposits in the hidden (unknown) vaults."
+          text="When enabled, shows positions and deposits in unverified vaults. Interacting with unverified vaults may pose security risks, as such vaults could potentially be used for phishing attempts. Ensure you trust the source before continuing."
           tooltip-placement="top-end"
         />
         <UiSwitch
@@ -92,13 +106,15 @@ onDeactivated(() => {
       </div>
     </div>
 
+    <PortfolioShowAllHint />
+
     <div class="flex flex-col gap-16 p-16 rounded-12 mx-16 border border-line-default bg-card shadow-card">
       <div class="flex justify-between items-center">
         <div class="flex items-center gap-4 text-p2 text-content-secondary">
           Portfolio Net APY
           <UiFootnote
             title="Portfolio Net APY"
-            text="Net annual percentage yield across all borrow positions. Calculated as total net yield (supply income minus borrow costs) divided by total supplied value."
+            text="Net annual percentage yield across all positions. Calculated as total net yield (supply income minus borrow costs) divided by total supplied value."
             tooltip-placement="bottom-start"
             class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
           />
@@ -117,7 +133,7 @@ onDeactivated(() => {
           Portfolio ROE
           <UiFootnote
             title="Portfolio ROE"
-            text="Return on equity across all borrow positions. Calculated as total net yield divided by total equity (supplied value minus borrowed value)."
+            text="Return on equity across all positions. Calculated as total net yield divided by total equity (supplied value minus borrowed value)."
             tooltip-placement="bottom-start"
             class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
           />
@@ -144,7 +160,7 @@ onDeactivated(() => {
               return formatCompactUsdValue(netValue)
             })() }}
             <UiFootnote
-              v-if="(totalSuppliedValueInfo.hasMissingPrices || totalBorrowedValueInfo.hasMissingPrices) && (totalSuppliedValueInfo.total - totalBorrowedValueInfo.total) !== 0"
+              v-if="totalSuppliedValueInfo.hasMissingPrices || totalBorrowedValueInfo.hasMissingPrices"
               title="Incomplete pricing"
               text="Some assets in your portfolio don't have price data available. The displayed value may be higher than shown."
               tooltip-placement="top-end"
@@ -164,7 +180,7 @@ onDeactivated(() => {
               return formatCompactUsdValue(total)
             })() }}
             <UiFootnote
-              v-if="totalSuppliedValueInfo.hasMissingPrices && totalSuppliedValueInfo.total !== 0"
+              v-if="totalSuppliedValueInfo.hasMissingPrices"
               title="Incomplete pricing"
               text="Some supplied assets don't have price data available. The displayed value may be higher than shown."
               tooltip-placement="top-end"
@@ -184,7 +200,7 @@ onDeactivated(() => {
               return formatCompactUsdValue(total)
             })() }}
             <UiFootnote
-              v-if="totalBorrowedValueInfo.hasMissingPrices && totalBorrowedValueInfo.total !== 0"
+              v-if="totalBorrowedValueInfo.hasMissingPrices"
               title="Incomplete pricing"
               text="Some borrowed assets don't have price data available. The displayed value may be higher than shown."
               tooltip-placement="top-end"

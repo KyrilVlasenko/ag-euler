@@ -339,43 +339,47 @@ source .env && forge script script/03_DeployBorrowVault.s.sol \
 
 **Output:** `BORROW_VAULT=0x...` → paste into `.env`
 
-### Step 4: Deploy Collateral Vault
+### Step 4: Deploy Additional Borrow Vaults (Unified Market Pattern)
 
-Creates the collateral vault. Collateral vaults do NOT need an oracle or unit of account — those are set to `address(0)`.
+**In a unified market, there are NO separate collateral vaults.** Each asset gets a borrow vault, and borrow vaults reference each other as collateral. This means users deposit into a single vault per asset that both earns lending yield AND serves as collateral for borrowing other assets — matching the pattern used on the official Euler frontend (app.euler.finance).
+
+Deploy one borrow vault per asset in the cluster, each with the shared oracle router and USD unit of account:
 
 ```
-trailingData = abi.encodePacked(collateralToken, address(0), address(0))
+trailingData = abi.encodePacked(asset, oracleRouter, USD)  // 60 bytes
 ```
 
-**Run:**
-```bash
-source .env && forge script script/04_DeployCollateralVault.s.sol \
-  --rpc-url $RPC_URL_<CHAIN> --private-key $PRIVATE_KEY \
-  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
-```
+Repeat step 3 for each additional asset. For a 6-asset cluster (e.g. USDC, ETH, VVV, ZRO, VIRTUAL, AERO), you deploy 6 borrow vaults total.
 
-**Output:** `COLLATERAL_VAULT=0x...` → paste into `.env`
+**Output:** One `<ASSET>_BORROW_VAULT=0x...` per asset → paste into `.env`
+
+> **Legacy pattern (separate collateral vaults):** Older deployments used standalone collateral vaults with `oracle = address(0)` and `unitOfAccount = address(0)`. This created a split where users had to choose between earning yield (deposit in borrow vault) or using as collateral (deposit in collateral vault). The unified pattern above eliminates this split. See `contracts/venice-contracts/script/28_UnifyBorrowVaultsAsCollateral.s.sol` for an example of migrating from split to unified.
 
 ### Step 5: Wire Oracle
 
-Connect the oracle router to price the collateral in terms of the borrow asset.
+Connect the oracle router so it can price each asset and resolve borrow vault shares to their underlying tokens.
 
-**ERC-4626 path (Origin pattern):** If collateral implements ERC-4626 and `convertToAssets` chains down to the borrow token:
-
-```solidity
-router.govSetResolvedVault(collateralVault, true);   // EVault → underlying token
-router.govSetResolvedVault(underlyingToken, true);    // token → borrow asset (if another hop)
-```
-
-Resolution terminates when the resolved asset matches the borrow vault's unit of account.
-
-**Chainlink/Pyth adapter path:** If a price feed is needed:
+**Price adapters** — set up a price feed for each token in the cluster:
 
 ```solidity
-router.govSetConfig(collateralToken, borrowToken, oracleAdapterAddress);
+router.govSetConfig(tokenA, USD, tokenA_USD_adapter);
+router.govSetConfig(tokenB, USD, tokenB_USD_adapter);
+// ... repeat for each token
 ```
 
-**Custom oracle path (Cork pattern):** Deploy a custom oracle contract in `src/`, then wire it the same way as an adapter.
+**Resolve borrow vaults** — tell the router that borrow vault shares resolve to the underlying token. This is required so that when Vault A accepts Vault B as collateral, the router can price Vault B's shares:
+
+```solidity
+router.govSetResolvedVault(borrowVaultA, true);  // eVaultA shares → tokenA
+router.govSetResolvedVault(borrowVaultB, true);  // eVaultB shares → tokenB
+// ... repeat for each borrow vault
+```
+
+The resolution chain is: eVault shares → `asset()` → underlying token → price adapter → USD value.
+
+**ERC-4626 resolution (Origin pattern):** If collateral is itself an ERC-4626 wrapper (e.g. sfrxETH → WETH), use `govSetResolvedVault` on the token itself for multi-hop resolution.
+
+**Custom oracle path (Cork pattern):** Deploy a custom oracle contract in `src/`, then wire it via `govSetConfig`.
 
 **Run:**
 ```bash
@@ -386,7 +390,7 @@ source .env && forge script script/05_WireOracle.s.sol \
 
 ### Step 6: Configure Cluster
 
-Sets all risk parameters on the borrow vault.
+Sets all risk parameters on each borrow vault and wires cross-collateral LTVs.
 
 **Parameters to customize:**
 
@@ -404,6 +408,25 @@ Sets all risk parameters on the borrow vault.
 - Highly correlated pairs (e.g. sfrxETH/WETH): 90-92% borrow, 93-95% liquidation
 - Moderately correlated (e.g. stablecoin/stablecoin): 85-90% borrow, 88-93% liquidation
 - Low correlation or volatile: 70-80% borrow, 75-85% liquidation
+
+**Cross-collateral LTV (unified market):** In the unified pattern, each borrow vault accepts other borrow vaults as collateral. A vault cannot accept itself as collateral (`setLTV(address(this), ...)` reverts with `E_InvalidLTVAsset`).
+
+```solidity
+// Example: 3-asset cluster (USDC, ETH, VVV)
+// USDC borrow vault accepts ETH and VVV borrow vaults as collateral
+IEVault(usdcBorrow).setLTV(ethBorrow, BORROW_LTV, LIQUIDATION_LTV, 0);
+IEVault(usdcBorrow).setLTV(vvvBorrow, BORROW_LTV, LIQUIDATION_LTV, 0);
+
+// ETH borrow vault accepts USDC and VVV borrow vaults as collateral
+IEVault(ethBorrow).setLTV(usdcBorrow, BORROW_LTV, LIQUIDATION_LTV, 0);
+IEVault(ethBorrow).setLTV(vvvBorrow,  BORROW_LTV, LIQUIDATION_LTV, 0);
+
+// VVV borrow vault accepts USDC and ETH borrow vaults as collateral
+IEVault(vvvBorrow).setLTV(usdcBorrow, BORROW_LTV, LIQUIDATION_LTV, 0);
+IEVault(vvvBorrow).setLTV(ethBorrow,  BORROW_LTV, LIQUIDATION_LTV, 0);
+```
+
+**Restricting volatile-to-volatile pairs:** To avoid risky positions (e.g. borrowing VVV against AERO), you can omit `setLTV` between volatile assets and only allow them as collateral for stable/blue-chip borrow vaults (USDC, ETH). See `contracts/venice-contracts/script/27_RemoveVolatileVolatileLTV.s.sol` for an example.
 
 **Run:**
 ```bash
@@ -443,7 +466,7 @@ cast send <VAULT_ADDRESS> "setHookConfig(address,uint32)" \
   --rpc-url $RPC_URL_<CHAIN> --private-key $PRIVATE_KEY
 ```
 
-**You must run this for every vault you deployed** — borrow vaults AND collateral vaults. For example, a 2-market deployment with 2 borrow vaults and 2 collateral vaults requires 4 activation transactions.
+**You must run this for every vault you deployed.** In the unified market pattern, this means one activation per borrow vault. For example, a 6-asset unified market requires 6 activation transactions.
 
 This can also be added as an additional deployment script (e.g. `08_ActivateMarkets.s.sol`) or run manually via `cast send` after all other steps are complete.
 
@@ -471,57 +494,62 @@ frontends/labels/alphagrowth/
 
 ### 3.2 File Templates
 
-**products.json** — Defines vault clusters. Every vault address here becomes visible.
+**products.json** — Defines vault clusters. Every vault address here becomes visible. In the unified market pattern, list only borrow vaults (no separate collateral vaults):
 
 ```json
 {
-  "<partner>-<market-name>": {
-    "name": "<Partner> / <BorrowAsset>",
-    "description": "Borrow <BorrowAsset> against <CollateralToken> on <Chain>. Curated by Alpha Growth.",
-    "entity": ["alphagrowth", "<partner>", "euler"],
-    "url": "https://<partner-website>",
+  "<chain>-unified": {
+    "name": "<Chain> Unified Market",
+    "description": "Borrow and lend <Asset1>, <Asset2>, ... on <Chain>. Curated by Alpha Growth.",
+    "entity": ["alphagrowth", "euler"],
+    "url": "https://alphagrowth.io",
     "vaults": [
-      "0x<COLLATERAL_VAULT_CHECKSUM>",
-      "0x<BORROW_VAULT_CHECKSUM>"
+      "0x<ASSET1_BORROW_VAULT_CHECKSUM>",
+      "0x<ASSET2_BORROW_VAULT_CHECKSUM>",
+      "0x<ASSET3_BORROW_VAULT_CHECKSUM>"
     ]
   }
 }
 ```
 
-**vaults.json** — Per-vault display metadata.
+**vaults.json** — Per-vault display metadata. Each borrow vault serves as both lending and collateral:
 
 ```json
 {
-  "0x<COLLATERAL_VAULT_CHECKSUM>": {
-    "name": "<Token> Collateral",
-    "description": "<Token> collateral vault",
-    "entity": "<partner>"
-  },
-  "0x<BORROW_VAULT_CHECKSUM>": {
-    "name": "<BorrowAsset> Lending",
-    "description": "<BorrowAsset> lending vault for <Partner> market",
+  "0x<ASSET1_BORROW_VAULT_CHECKSUM>": {
+    "name": "<Asset1> Lending",
+    "description": "Lend <Asset1> to earn yield, or use as collateral to borrow other assets.",
     "entity": "alphagrowth"
+  },
+  "0x<ASSET2_BORROW_VAULT_CHECKSUM>": {
+    "name": "<Asset2> Lending",
+    "description": "Lend <Asset2> to earn yield, or use as collateral to borrow other assets.",
+    "entity": "<partner>"
   }
 }
 ```
 
 **entities.json** — Organization metadata and logos.
 
+**CRITICAL: The `alphagrowth` entity MUST include the deployer's governor address in `addresses`.** The frontend checks if each vault's on-chain `governorAdmin` matches an address in the entity's `addresses` map. Without this, Risk Manager shows "Unknown" and Vault Type shows "Unknown" instead of "AlphaGrowth" / "Governed". Query the governor address with: `cast call <VAULT> "governorAdmin()(address)" --rpc-url $RPC_URL`.
+
 ```json
 {
   "alphagrowth": {
-    "name": "Alpha Growth",
+    "name": "AlphaGrowth",
     "logo": "alphagrowth.svg",
     "description": "DeFi risk curation and vault management",
     "url": "https://alphagrowth.io",
-    "addresses": {},
+    "addresses": {
+      "0x<GOVERNOR_ADMIN_ADDRESS>": "AlphaGrowth Curator Wallet"
+    },
     "social": { "twitter": "", "discord": "", "telegram": "", "github": "" }
   },
   "<partner>": {
     "name": "<Partner Name>",
     "logo": "<partner>.svg",
     "website": "https://<partner-website>",
-    "addresses": []
+    "addresses": {}
   },
   "euler": {
     "name": "Euler Finance",
@@ -550,9 +578,38 @@ frontends/labels/alphagrowth/
 
 The `logo/` directory already has `alphagrowth.svg` and `euler.svg`. Just add the new partner's logo as SVG or PNG.
 
-### 3.4 Push to GitHub
+### 3.4 Push to Custom Labels Repo
 
-After editing the labels locally, push the consolidated labels repo to GitHub so the frontend can fetch them at runtime via raw GitHub URLs.
+After editing the labels locally, push the consolidated labels repo to GitHub so the frontend can fetch them at runtime via raw GitHub URLs. Test on localhost before proceeding.
+
+### 3.5 Submit to Official Euler Labels (app.euler.finance Listing)
+
+To have vaults verified and displayed correctly on the **official** Euler dApp, submit a PR to [euler-xyz/euler-labels](https://github.com/euler-xyz/euler-labels).
+
+**Prerequisites:**
+- Governance MUST be transferred to the team multisig BEFORE submitting the PR. The multisig address must match what's in the `alphagrowth` entity's `addresses` map in the upstream repo. If you submit with a dev wallet as governor, vaults will show "Unknown" for Risk Manager on the official frontend.
+- The `alphagrowth` entity and logo already exist in the upstream repo — you only need to add vault and product entries.
+
+**Process:**
+1. Fork `euler-xyz/euler-labels` to your GitHub account
+2. Clone your fork locally (or add as remote to the existing `reference/euler-labels/` clone)
+3. Add vault entries to `<chainId>/vaults.json` — use naming pattern `"AlphaGrowth <ASSET> <Chain> Vault"`, entity `"alphagrowth"`
+4. Add vault addresses to an existing AlphaGrowth product in `<chainId>/products.json`, or create a new product
+5. If the governor address isn't already in the upstream `alphagrowth` entity's `addresses`, add it to `<chainId>/entities.json`
+6. Run `npm i && node verify.js` — must print `OK`
+7. Push to your fork, create PR to `euler-xyz/euler-labels`
+
+**What each label controls on the official frontend:**
+
+| Label | Controls | Without it |
+|---|---|---|
+| Vault in `products.json` | Vault appears on the dApp | Vault is invisible |
+| Vault in `vaults.json` | Vault name, description | Shows "Unknown" for market name |
+| Governor in entity `addresses` | Risk Manager + Vault Type display | Shows "Unknown" / "Unverified" |
+
+**Oracle provider/methodology** is NOT controlled by labels. It comes from `euler-xyz/oracle-checks`, which auto-crawls all oracle routers every 6 hours. Custom Chainlink adapters will be picked up automatically — no PR needed.
+
+**Reference:** See `contracts/base-market-contracts/` for the Base unified market PR example.
 
 ---
 
@@ -640,12 +697,15 @@ intrinsicApySources: [
 
 ### Verification
 
-- [ ] **Markets activated** — `setHookConfig(address(0), 0)` called on ALL vaults (borrow + collateral). Verify: `cast call <vault> "hookConfig()(address,uint32)"` returns `0` for the second value.
+- [ ] **Markets activated** — `setHookConfig(address(0), 0)` called on ALL borrow vaults. Verify: `cast call <vault> "hookConfig()(address,uint32)"` returns `0` for the second value.
 - [ ] Vaults appear in frontend (check `products.json` is fetched correctly)
 - [ ] Entity logos render (check `entities.json` + `logo/` directory)
+- [ ] Risk Manager shows "AlphaGrowth" (not "Unknown") — verify `entities.json` has the vault's `governorAdmin` address in the `alphagrowth` entity's `addresses` map
+- [ ] Vault Type shows "Governed" (not "Unknown") — same root cause as above
 - [ ] Vault names and descriptions display correctly (`vaults.json`)
-- [ ] Lending flow works (deposit borrow asset)
-- [ ] Borrowing flow works (deposit collateral, borrow)
+- [ ] Lending flow works (deposit into borrow vault, earn yield)
+- [ ] Borrowing flow works (deposit into one borrow vault as collateral, borrow from another)
+- [ ] Each vault shows both "Borrow against" and "Use as collateral" on the frontend (unified market)
 - [ ] Multiply flow works (if applicable)
 - [ ] Oracle prices resolve correctly on-chain
 
@@ -664,8 +724,12 @@ intrinsicApySources: [
 
 ### Governance
 
-- [ ] Transfer borrow vault governor from deployer EOA to multisig via `setGovernorAdmin()`
+**IMPORTANT: Transfer governance BEFORE submitting the euler-labels PR.** The official frontend checks `governorAdmin` against entity addresses — if the dev wallet is still governor but not in the entity's `addresses`, vaults show "Unknown" for Risk Manager.
+
+- [ ] Transfer ALL borrow vault governors from deployer EOA to multisig via `setGovernorAdmin()` — see `contracts/base-market-contracts/script/cluster-management/30_TransferGovernance.s.sol` for reference
 - [ ] Transfer oracle router governance via `transferGovernance()`
+- [ ] Verify on-chain: `cast call <vault> "governorAdmin()(address)"` returns the multisig
+- [ ] Verify the multisig address exists in the `alphagrowth` entity's `addresses` in `euler-xyz/euler-labels`
 
 ---
 
@@ -885,17 +949,61 @@ cast call $VAULT "governorAdmin()(address)" --rpc-url $RPC
 
 | What | Where |
 |---|---|
+| Base unified market (6-asset cluster) | `contracts/base-market-contracts/` |
+| Base market scripts (per-asset folders) | `contracts/base-market-contracts/script/{vvv-usdc-eth,zro,aero,virtual,cluster-management}/` |
 | Origin contracts (simplest template) | `contracts/origin-contracts/script/` |
 | Cork contracts (custom oracle/hook) | `contracts/cork-contracts/script/` + `contracts/cork-contracts/src/` |
 | Balancer contracts (multi-pool + adapter) | `contracts/balancer-contracts/script/` + `contracts/balancer-contracts/src/` |
 | Frax contracts (ICHI oracle + keeper) | `contracts/frax-contracts/script/` + `contracts/frax-contracts/ichi-oracle-kit/` |
-| ZRO contracts (add-to-cluster + Chainlink adapter) | `contracts/zro-contracts/script/` |
-| Consolidated labels (all partners) | `frontends/labels/alphagrowth/` (chains 1, 143, 8453) |
+| Custom labels (AG frontend) | `frontends/ag-euler-balancer-labels/` |
 | Consolidated frontend (all partners) | `frontends/alphagrowth/` |
-| Euler labels fork (official listing PRs) | `frontends/labels/euler-submission/euler-labels/` |
+| Official Euler labels (for PRs) | `reference/euler-labels/` (fork of `euler-xyz/euler-labels`) |
+| Oracle checks (auto-crawled) | `reference/oracle-checks/` (clone of `euler-xyz/oracle-checks`) |
 | Euler V2 addresses per chain | `reference/euler-interfaces/addresses/<chainId>/` |
 | Oracle adapters per chain | `reference/euler-interfaces/addresses/<chainId>/OracleAdaptersAddresses.csv` |
 | Euler reference repos | `reference/` (EVC, EVK, price oracle, etc.) |
 | IRM calculator | `reference/evk-periphery/script/utils/calculate-irm-linear-kink.js` |
 | Project task tracker | `TODO.md` |
 | Labels + integration context | `CLAUDE.md` |
+
+---
+
+## Lessons Learned (Base Unified Market Deployment)
+
+### 1. Use unified vaults, not separate borrow + collateral vaults
+
+**Problem:** The original deployment created separate "collateral vaults" (`oracle = address(0)`, `unitOfAccount = address(0)`) for each asset. This forced users to choose between earning yield (deposit in borrow vault) OR using as collateral (deposit in collateral vault) — they couldn't do both. It also fragmented liquidity across duplicate pools.
+
+**Solution:** Deploy ONE borrow vault per asset. Set `setLTV` between borrow vaults so they accept each other as collateral. Resolve all borrow vaults in the oracle router via `govSetResolvedVault`. This matches the pattern used on the official Euler frontend (e.g. eUSDC-1).
+
+**Reference:** `contracts/base-market-contracts/script/cluster-management/28_UnifyBorrowVaultsAsCollateral.s.sol`
+
+### 2. Restrict volatile-to-volatile collateral pairs
+
+To avoid risky positions (e.g. borrowing VVV against AERO), only set LTV between volatile assets and stable/blue-chip assets (USDC, ETH). Omit `setLTV` calls between volatile pairs entirely. Don't add them and then remove — just never configure them.
+
+**Reference:** `contracts/base-market-contracts/script/cluster-management/27_RemoveVolatileVolatileLTV.s.sol`
+
+### 3. Use consistent LTV values in scripts
+
+When rewriting LTV configuration (e.g. migrating from split to unified vaults), copy the EXACT LTV values from the original configuration. Hardcoding default values (e.g. 80/85) in a new script will silently overwrite custom values (e.g. 85/87) that were set per-pair.
+
+### 4. Transfer governance before submitting euler-labels PR
+
+The official Euler frontend resolves "Risk Manager" and "Vault Type" by checking if `vault.governorAdmin` matches an address in the entity's `addresses` map. If you submit the PR while a dev wallet is still governor, the vaults will show as "Unverified" on app.euler.finance. Transfer to multisig first, then submit the PR.
+
+**Order:** Deploy → Test → Transfer governance to multisig → Verify on-chain → Submit labels PR
+
+### 5. Oracle provider labels are auto-discovered
+
+Don't manually submit adapter metadata to `euler-xyz/oracle-checks`. The system runs a GitHub Action every 6 hours that crawls all oracle routers deployed via the factory and auto-generates adapter JSON files. Custom Chainlink adapters will be picked up automatically.
+
+For local testing, you can override with `NUXT_PUBLIC_CONFIG_ORACLE_CHECKS_REPO` in the frontend `.env`.
+
+### 6. Product grouping in labels is purely visual
+
+Adding vaults to the same product in `products.json` only affects how they're grouped in the UI. It does NOT create any on-chain relationship between vaults. Cross-collateral capability is determined solely by `setLTV` configuration. Vaults in the same product that have no LTV set between them are completely independent markets.
+
+### 7. AmountCap encoding for supply/borrow caps
+
+Euler V2 encodes caps as 16-bit values: `10^(raw & 63) * (raw >> 6) / 100`. The `/100` is easy to forget — without it, decoded values are 100x too high. Use the `AmountCapLib.resolve()` function from `reference/euler-vault-kit/src/EVault/shared/types/AmountCap.sol` as the reference.

@@ -7,6 +7,7 @@ import type { AccountBorrowPosition } from '~/entities/account'
 import { SwapperMode } from '~/entities/swap'
 import { useSwapRepayQuotes } from '~/composables/repay/useSwapRepayQuotes'
 import { valueToNano } from '~/utils/crypto-utils'
+import { logWarn } from '~/utils/errorHandling'
 import { trimTrailingZeros } from '~/utils/string-utils'
 import { normalizeAddressOrEmpty } from '~/utils/accountPositionHelpers'
 import { amountToPercent, percentToAmountNano } from '~/utils/repayUtils'
@@ -37,7 +38,7 @@ export interface UseRepaySwapCoreOptions {
   sourceBalance: ComputedRef<bigint>
   formTab: Ref<string>
   formTabName: string
-  slippage: Ref<number>
+  slippage: Readonly<Ref<number>>
   clearSimulationError: () => void
   getCurrentDebt: () => bigint
   getQuoteAccounts: () => QuoteAccounts
@@ -120,6 +121,23 @@ export const useRepaySwapCore = (options: UseRepaySwapCoreOptions) => {
       return BigInt(quotes.quote.value.amountOut || 0)
     }
     catch { return null }
+  })
+
+  const isRepayExceedsDebt = computed(() => {
+    if (isSameAsset.value) return false
+    if (!position.value || position.value.borrowed <= 0n) return false
+    if (direction.value === SwapperMode.EXACT_IN) {
+      if (debtRepaid.value === null) return false
+      return debtRepaid.value > position.value.borrowed
+    }
+    if (direction.value === SwapperMode.TARGET_DEBT && debtAmount.value && borrowVault.value) {
+      try {
+        const inputNano = valueToNano(debtAmount.value, borrowVault.value.asset.decimals)
+        return inputNano > position.value.borrowed
+      }
+      catch { return false }
+    }
+    return false
   })
 
   // --- Async USD values ---
@@ -273,40 +291,36 @@ export const useRepaySwapCore = (options: UseRepaySwapCoreOptions) => {
         quotes.reset()
         return
       }
-
-      const fetcher = customQuoteFetcher?.value
-      if (fetcher) {
-        const tokenIn = sourceVault.value.asset.address as Address
-        const tokenOut = borrowVault.value.asset.address as Address
-        const vaultIn = sourceVault.value.address as Address
-        const receiver = borrowVault.value.address as Address
-        await quotes.exactInQuotes.requestCustomQuote('enso', async () => {
-          return fetcher.fetchExactIn({
-            tokenIn,
-            tokenOut,
-            amount: parsedAmount,
-            currentDebt,
-            slippage: slippage.value,
-            accountIn,
-            vaultIn,
-            receiver,
-          })
-        })
+      const quoteParams = {
+        tokenIn: sourceVault.value.asset.address as Address,
+        tokenOut: borrowVault.value.asset.address as Address,
+        accountIn,
+        accountOut,
+        amount: parsedAmount,
+        vaultIn: sourceVault.value.address as Address,
+        receiver: borrowVault.value.address as Address,
+        slippage: slippage.value,
+        swapperMode: SwapperMode.EXACT_IN,
+        isRepay: true,
+        targetDebt: 0n,
+        currentDebt,
       }
-      else {
-        await quotes.exactInQuotes.requestQuotes({
-          tokenIn: sourceVault.value.asset.address as Address,
-          tokenOut: borrowVault.value.asset.address as Address,
-          accountIn,
-          accountOut,
+      await quotes.exactInQuotes.requestQuotes(quoteParams)
+
+      if (customQuoteFetcher?.value) {
+        void customQuoteFetcher.value.fetchExactIn({
+          tokenIn: quoteParams.tokenIn,
+          tokenOut: quoteParams.tokenOut,
           amount: parsedAmount,
-          vaultIn: sourceVault.value.address as Address,
-          receiver: borrowVault.value.address as Address,
-          slippage: slippage.value,
-          swapperMode: SwapperMode.EXACT_IN,
-          isRepay: true,
-          targetDebt: 0n,
           currentDebt,
+          slippage: slippage.value,
+          accountIn,
+          vaultIn: quoteParams.vaultIn,
+          receiver: quoteParams.receiver,
+        }).then((ensoQuote) => {
+          quotes.exactInQuotes.upsertQuote('enso', ensoQuote)
+        }).catch((e) => {
+          logWarn('repaySwapCore/ensoQuote', e)
         })
       }
       return
@@ -409,6 +423,7 @@ export const useRepaySwapCore = (options: UseRepaySwapCoreOptions) => {
     isSameAsset,
     spent,
     debtRepaid,
+    isRepayExceedsDebt,
     sourceValueUsd,
     borrowValueUsd,
     nextBorrowValueUsd,

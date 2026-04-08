@@ -34,9 +34,15 @@ export const useModal = () => {
       component: markRaw(component),
       data,
     })
-    popstateHandler = () => onClickBack(id)
-    window.history.pushState({ ...window.history.state, modalId: id }, component.name || 'Modal window')
-    window.addEventListener('popstate', popstateHandler)
+
+    // Skip history management for non-closable modals — they can't be
+    // dismissed via the back button and pushing state would cause
+    // history.back() in close() to undo any navigation the modal triggers.
+    if (!data.isNotClosable) {
+      popstateHandler = () => onClickBack(id)
+      window.history.pushState({ ...window.history.state, modalId: id }, component.name || 'Modal window')
+      window.addEventListener('popstate', popstateHandler)
+    }
 
     if (!data.noLock) {
       lock.value = true

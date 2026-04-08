@@ -132,6 +132,16 @@ export const evcDisableCollateralAbi = [
   },
 ] as const
 
+export const evcGetAccountOwnerAbi = [
+  {
+    type: 'function',
+    name: 'getAccountOwner',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+] as const
+
 export const evcGetControllersAbi = [
   {
     type: 'function',

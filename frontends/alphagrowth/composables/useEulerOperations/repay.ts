@@ -40,18 +40,13 @@ export const createRepayBuilders = (
       includePermit2Call: options.includePermit2Call ?? true,
     })
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(borrowVaultAddr, vaultRepayAbi)
-    tos.addTosInterface(hooks)
 
     hooks.setMainCallHookCallFromSelf(borrowVaultAddr, 'repay', [amount, subAccountAddr])
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, subAccountAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (permitCall) {
       evcCalls.unshift(permitCall)
@@ -96,8 +91,6 @@ export const createRepayBuilders = (
       includePermit2Call: options.includePermit2Call ?? true,
     })
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const collateralAddrs = collateralAddresses.map(addr => addr as Address)
 
     const hooks = new SaHooksBuilder()
@@ -108,11 +101,7 @@ export const createRepayBuilders = (
       hooks.addContractInterface(collateralAddr, vaultTransferFromMaxAbi)
     }
 
-    tos.addTosInterface(hooks)
-
     const evcCalls: EVCCall[] = []
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (permitCall) {
       evcCalls.push(permitCall)
@@ -179,16 +168,11 @@ export const createRepayBuilders = (
     const subAccountAddr = subAccount as Address
     const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(vaultAddr, vaultTransferFromMaxAbi)
     hooks.addContractInterface(evcAddress, evcDisableCollateralAbi)
-    tos.addTosInterface(hooks)
 
     const evcCalls: EVCCall[] = []
-
-    tos.injectTosCall(evcCalls, hooks)
 
     const liabilityAddr = borrowVaultAddress || vaultAddr
     await helpers.injectPythHealthCheckUpdates({
@@ -247,11 +231,8 @@ export const createRepayBuilders = (
 
     const savingsVaultAddr = savingsVaultAddress as Address
     const borrowVaultAddr = borrowVaultAddress as Address
-    const userAddr = ctx.address.value as Address
     const savingsSubAccountAddr = savingsSubAccount as Address
     const borrowSubAccountAddr = borrowSubAccount as Address
-
-    const tos = await helpers.prepareTos(userAddr)
 
     const sameVault = savingsVaultAddr.toLowerCase() === borrowVaultAddr.toLowerCase()
 
@@ -263,11 +244,8 @@ export const createRepayBuilders = (
       hooks.addContractInterface(savingsVaultAddr, vaultWithdrawAbi)
       hooks.addContractInterface(borrowVaultAddr, [...vaultSkimAbi, ...vaultRepayWithSharesAbi])
     }
-    tos.addTosInterface(hooks)
 
     const evcCalls: EVCCall[] = []
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (sameVault) {
       evcCalls.push({
@@ -336,8 +314,6 @@ export const createRepayBuilders = (
     const savingsSubAccountAddr = savingsSubAccount as Address
     const borrowSubAccountAddr = borrowSubAccount as Address
 
-    const tos = await helpers.prepareTos(userAddr)
-
     // Pre-flight: read pre-existing deposit in borrow vault
     let preExistingBorrowDeposit = 0n
     try {
@@ -375,7 +351,6 @@ export const createRepayBuilders = (
       hooks.addContractInterface(borrowVaultAddr, [...vaultSkimAbi, ...vaultRepayWithSharesAbi, ...evcDisableControllerAbi, ...vaultRedeemAbi])
     }
     hooks.addContractInterface(evcAddress, evcDisableCollateralAbi)
-    tos.addTosInterface(hooks)
     for (const collateralAddr of collateralAddresses) {
       hooks.addContractInterface(collateralAddr as Address, vaultTransferFromMaxAbi)
     }
@@ -383,8 +358,6 @@ export const createRepayBuilders = (
     const evcCalls: EVCCall[] = []
 
     // No Pyth updates needed — batch ends with disableController (no health check)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (sameVault) {
       evcCalls.push({

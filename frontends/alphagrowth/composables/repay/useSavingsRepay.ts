@@ -1,6 +1,6 @@
 import type { Ref, ComputedRef } from 'vue'
 import { useAccount } from '@wagmi/vue'
-import { formatUnits, zeroAddress, type Address } from 'viem'
+import { zeroAddress, type Address } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { useModal } from '~/components/ui/composables/useModal'
 import { OperationReviewModal } from '#components'
@@ -16,7 +16,6 @@ import { useRepaySwapCore } from '~/composables/repay/useRepaySwapCore'
 import { useRepaySwapDetails } from '~/composables/repay/useRepaySwapDetails'
 import { useRepayHealthMetrics } from '~/composables/repay/useRepayHealthMetrics'
 import { nanoToValue, valueToNano } from '~/utils/crypto-utils'
-import { trimTrailingZeros } from '~/utils/string-utils'
 import { createRaceGuard } from '~/utils/race-guard'
 
 interface UseSavingsRepayOptions {
@@ -27,7 +26,7 @@ interface UseSavingsRepayOptions {
   plan: Ref<TxPlan | null>
   isSubmitting: Ref<boolean>
   isPreparing: Ref<boolean>
-  slippage: Ref<number>
+  slippage: Readonly<Ref<number>>
   oraclePriceRatio: ComputedRef<number | null>
   clearSimulationError: () => void
   runSimulation: (plan: TxPlan) => Promise<boolean>
@@ -75,6 +74,7 @@ export const useSavingsRepay = (options: UseSavingsRepayOptions) => {
     () => sourceVault.value?.asset.symbol,
     () => borrowVault.value?.asset.symbol,
   )
+  priceInvert.autoInvert(oraclePriceRatio)
   const sourceProduct = useEulerProductOfVault(computed(() => sourceVault.value?.address || ''))
 
   // --- Core swap logic ---
@@ -93,18 +93,6 @@ export const useSavingsRepay = (options: UseSavingsRepayOptions) => {
       const savingsSubAccount = (savingsPos?.subAccount || address.value || zeroAddress) as Address
       const borrowSubAccount = (position.value?.subAccount || address.value || zeroAddress) as Address
       return { accountIn: savingsSubAccount, accountOut: borrowSubAccount }
-    },
-    onQuoteReceived: (amountOut, dir) => {
-      if (dir !== SwapperMode.EXACT_IN) return false
-      const currentDebt = position.value?.borrowed || 0n
-      if (amountOut >= currentDebt && currentDebt > 0n && borrowVault.value) {
-        core.direction.value = SwapperMode.TARGET_DEBT
-        core.debtPercent.value = 100
-        core.debtAmount.value = trimTrailingZeros(formatUnits(currentDebt, Number(borrowVault.value.asset.decimals)))
-        core.requestQuote()
-        return true
-      }
-      return false
     },
   })
 
@@ -163,6 +151,7 @@ export const useSavingsRepay = (options: UseSavingsRepayOptions) => {
     if (!isConnected.value) return false
     if (!sourceVault.value || !borrowVault.value) return true
     if (!core.debtAmount.value && !core.amount.value) return true
+    if (core.isRepayExceedsDebt.value) return true
     if (core.spent.value !== null && core.spent.value > sourceBalance.value) return true
     if (core.isSameAsset.value) return false
     if (core.quotes.quoteError.value) return true
@@ -171,6 +160,9 @@ export const useSavingsRepay = (options: UseSavingsRepayOptions) => {
   })
 
   const disabledReason = computed(() => {
+    if (core.isRepayExceedsDebt.value) {
+      return 'You repaying more than required'
+    }
     if (core.spent.value !== null && core.spent.value > sourceBalance.value) {
       return 'Insufficient savings balance to cover the required swap amount.'
     }
@@ -391,6 +383,7 @@ export const useSavingsRepay = (options: UseSavingsRepayOptions) => {
     // Submit
     isSubmitDisabled,
     disabledReason,
+    isRepayExceedsDebt: core.isRepayExceedsDebt,
     // Handlers
     onAmountInput: core.onAmountInput,
     onDebtInput: core.onDebtInput,

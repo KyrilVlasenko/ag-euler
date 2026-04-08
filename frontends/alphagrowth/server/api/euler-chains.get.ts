@@ -1,0 +1,50 @@
+import { createError } from 'h3'
+import { createRateLimiter } from '~/server/utils/rate-limit'
+import { createTtlCache } from '~/server/utils/cache'
+import { fetchWithTimeout } from '~/server/utils/fetchWithTimeout'
+import { logWarn } from '~/server/utils/log'
+
+const TIMEOUT_MS = 10_000
+const CACHE_TTL_MS = 300_000
+const DEFAULT_URL = 'https://raw.githubusercontent.com/euler-xyz/euler-interfaces/refs/heads/master/EulerChains.json'
+
+const rateLimiter = createRateLimiter({
+  max: 1000,
+  windowMs: 60_000,
+  label: 'euler-chains',
+})
+
+const cache = createTtlCache<unknown[]>({ ttlMs: CACHE_TTL_MS })
+
+function getUpstreamUrl(): string {
+  return (process.env.NUXT_PUBLIC_CONFIG_EULER_CHAINS_URL || '').trim() || DEFAULT_URL
+}
+
+export default defineEventHandler(async (event) => {
+  rateLimiter.consume(event)
+
+  const cached = cache.get('euler-chains')
+  if (cached) return cached
+
+  try {
+    const resp = await fetchWithTimeout(getUpstreamUrl(), TIMEOUT_MS)
+    if (!resp.ok) {
+      throw new Error(`Upstream returned ${resp.status}`)
+    }
+
+    const data: unknown = await resp.json()
+    if (!Array.isArray(data)) {
+      throw new Error('Upstream returned a non-array payload')
+    }
+    cache.set('euler-chains', data)
+    return data
+  }
+  catch (err) {
+    logWarn('euler-chains', 'Upstream fetch failed:', err instanceof Error ? err.message : err)
+
+    const stale = cache.getStale('euler-chains')
+    if (stale) return stale
+
+    throw createError({ statusCode: 502, statusMessage: 'Upstream error' })
+  }
+})

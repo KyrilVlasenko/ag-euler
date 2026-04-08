@@ -30,7 +30,7 @@ const onClick = (chainId: number) => {
         @click="onClick(chain.id)"
       >
         <BaseAvatar
-          class="mr-8 w-32 h-32 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.15)] rounded-full"
+          class="mr-8 w-32 h-32 shadow-[inset_0_0_0_1px_var(--border-subtle)] rounded-full"
           :src="`/chains/${chain.id}.webp`"
           :label="chain.name"
         />

@@ -9,14 +9,26 @@ const props = defineProps<{
 const emit = defineEmits(['close'])
 
 const localSelected = ref<string[]>([...props.selected])
+const selectedPrioritySet = ref(new Set(props.selected))
 const searchModel = ref('')
 
 const filteredOptions = computed(() => {
-  return searchModel.value
+  const options = searchModel.value
     ? props.options.filter((option) => {
         return option.label.replace('₮', 'T').toLowerCase().includes(searchModel.value.toLowerCase())
       })
     : props.options
+
+  const selectedFirst: typeof props.options = []
+  const unselected: typeof props.options = []
+  options.forEach((option) => {
+    if (selectedPrioritySet.value.has(option.value)) {
+      selectedFirst.push(option)
+      return
+    }
+    unselected.push(option)
+  })
+  return [...selectedFirst, ...unselected]
 })
 
 const toggleOption = (value: string) => {
@@ -46,6 +58,7 @@ const clear = () => {
 
 watch(() => props.selected, (val) => {
   localSelected.value = [...val]
+  selectedPrioritySet.value = new Set(val)
 })
 </script>
 

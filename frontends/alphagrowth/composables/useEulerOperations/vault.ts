@@ -15,6 +15,9 @@ import { SwapperMode, SwapVerificationType } from '~/entities/swap'
 import { logWarn } from '~/utils/errorHandling'
 import { assertSwapperVerifierAllowed } from '~/utils/swap-validation'
 
+const isAlreadyEnabled = (list: string[] | undefined, address: string): boolean =>
+  !!list?.some(c => c.toLowerCase() === address.toLowerCase())
+
 export const createVaultBuilders = (
   ctx: OperationsContext,
   helpers: OperationHelpers,
@@ -26,7 +29,7 @@ export const createVaultBuilders = (
     assetAddress: string,
     amount: bigint,
     subAccount?: string,
-    options: { includePermit2Call?: boolean } = {},
+    options: { includePermit2Call?: boolean, wrappedNativeInfo?: { wrappedTokenAddress: Address, nativeAmount: bigint } } = {},
   ): Promise<TxPlan> => {
     if (!ctx.address.value || !ctx.eulerCoreAddresses.value || !ctx.eulerPeripheryAddresses.value) {
       throw new Error('Wallet not connected or addresses not available')
@@ -45,19 +48,23 @@ export const createVaultBuilders = (
       includePermit2Call: options.includePermit2Call ?? true,
     })
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(assetAddr, erc20ApproveAbi)
     hooks.addContractInterface(vaultAddr, vaultDepositAbi)
-    tos.addTosInterface(hooks)
 
     hooks.setMainCallHookCallFromSelf(vaultAddr, 'deposit', [amount, depositToAddr])
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, depositToAddr)
 
-    tos.injectTosCall(evcCalls, hooks)
+    // Wrap native currency to ERC-20 (e.g. ETH → WETH) before deposit
+    if (options.wrappedNativeInfo) {
+      evcCalls.unshift(...helpers.buildNativeWrapCalls({
+        wrappedTokenAddress: options.wrappedNativeInfo.wrappedTokenAddress,
+        amount: options.wrappedNativeInfo.nativeAmount,
+        userAddr,
+      }))
+    }
 
     if (permitCall) {
       evcCalls.unshift(permitCall)
@@ -85,11 +92,8 @@ export const createVaultBuilders = (
     const userAddr = ctx.address.value as Address
     const withdrawFromAddr = subAccount ? (subAccount as Address) : userAddr
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(vaultAddr, vaultWithdrawAbi)
-    tos.addTosInterface(hooks)
 
     if (subAccount) {
       hooks.setMainCallHookCallFromSA(vaultAddr, 'withdraw', [assetsAmount, userAddr, withdrawFromAddr])
@@ -100,8 +104,6 @@ export const createVaultBuilders = (
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, withdrawFromAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (options.includePythUpdate) {
       const liabilityAddr = options.liabilityVault || vaultAddr
@@ -134,8 +136,6 @@ export const createVaultBuilders = (
     const userAddr = ctx.address.value as Address
     const redeemFromAddr = subAccount ? (subAccount as Address) : userAddr
 
-    const tos = await helpers.prepareTos(userAddr)
-
     let sharesAmount = isMax
       ? maxSharesAmount || 0n
       : await ctx.rpcProvider.readContract({
@@ -151,7 +151,6 @@ export const createVaultBuilders = (
 
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(vaultAddr, vaultRedeemAbi)
-    tos.addTosInterface(hooks)
 
     if (subAccount) {
       hooks.setMainCallHookCallFromSA(vaultAddr, 'redeem', [sharesAmount, userAddr, redeemFromAddr])
@@ -162,8 +161,6 @@ export const createVaultBuilders = (
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, redeemFromAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     return {
       kind: 'withdraw',
@@ -178,7 +175,7 @@ export const createVaultBuilders = (
     borrowVaultAddress: string,
     borrowAmount: bigint,
     subAccount?: string,
-    options: { includePermit2Call?: boolean, enabledCollaterals?: string[] } = {},
+    options: { includePermit2Call?: boolean, enabledCollaterals?: string[], enabledController?: string, acceptedCollaterals?: string[], wrappedNativeInfo?: { wrappedTokenAddress: Address, nativeAmount: bigint } } = {},
   ): Promise<TxPlan> => {
     if (!ctx.address.value || !ctx.eulerCoreAddresses.value || !ctx.eulerPeripheryAddresses.value) {
       throw new Error('Wallet not connected or addresses not available')
@@ -191,8 +188,6 @@ export const createVaultBuilders = (
     const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
 
     const subAccountAddr = (subAccount || await getNewSubAccount(ctx.address.value)) as Address
-
-    const tos = await helpers.prepareTos(userAddr)
 
     const steps: TxStep[] = []
     let permitCall: EVCCall | undefined
@@ -215,12 +210,9 @@ export const createVaultBuilders = (
     hooks.addContractInterface(vaultAddr, vaultDepositAbi)
     hooks.addContractInterface(borrowVaultAddr, vaultBorrowAbi)
     hooks.addContractInterface(evcAddress, [...evcEnableControllerAbi, ...evcEnableCollateralAbi])
-    tos.addTosInterface(hooks)
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, userAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (permitCall) {
       evcCalls.unshift(permitCall)
@@ -230,11 +222,21 @@ export const createVaultBuilders = (
       evcAddress,
       accountLensAddress: ctx.eulerLensAddresses.value!.accountLens as Address,
       subAccount: subAccountAddr as Address,
-      providerUrl: ctx.EVM_PROVIDER_URL,
+      providerUrl: ctx.rpcUrl,
       subgraphUrl: ctx.SUBGRAPH_URL,
+      acceptedCollaterals: options.acceptedCollaterals,
     })
     if (cleanupCalls.length) {
       evcCalls.push(...cleanupCalls)
+    }
+
+    // Wrap native currency to ERC-20 (e.g. ETH → WETH) before deposit
+    if (options.wrappedNativeInfo) {
+      evcCalls.push(...helpers.buildNativeWrapCalls({
+        wrappedTokenAddress: options.wrappedNativeInfo.wrappedTokenAddress,
+        amount: options.wrappedNativeInfo.nativeAmount,
+        userAddr,
+      }))
     }
 
     const depositCall: EVCCall = {
@@ -265,7 +267,16 @@ export const createVaultBuilders = (
       data: hooks.getDataForCall(borrowVaultAddr, 'borrow', [borrowAmount, userAddr]) as Hash,
     }
 
-    evcCalls.push(depositCall, enableControllerCall, enableCollateralCall, borrowCall)
+    if (amount > 0n) {
+      evcCalls.push(depositCall)
+    }
+    if (!options.enabledController || options.enabledController.toLowerCase() !== borrowVaultAddr.toLowerCase()) {
+      evcCalls.push(enableControllerCall)
+    }
+    if (!isAlreadyEnabled(options.enabledCollaterals, vaultAddr)) {
+      evcCalls.push(enableCollateralCall)
+    }
+    evcCalls.push(borrowCall)
 
     await helpers.injectPythHealthCheckUpdates({
       evcCalls,
@@ -291,6 +302,7 @@ export const createVaultBuilders = (
     subAccount?: string,
     enabledCollaterals?: string[],
     savingsSubAccount?: string,
+    enabledController?: string,
   ): Promise<TxPlan> => {
     if (!ctx.address.value || !ctx.eulerCoreAddresses.value || !ctx.eulerPeripheryAddresses.value) {
       throw new Error('Wallet not connected or addresses not available')
@@ -306,13 +318,10 @@ export const createVaultBuilders = (
     const isSavingsAtSubAccount = savingsSubAccount
       && getAddress(savingsSubAccount) !== getAddress(userAddr)
 
-    const tos = await helpers.prepareTos(userAddr)
-
     const hooks = new SaHooksBuilder()
     hooks.addContractInterface(vaultAddr, erc20TransferAbi)
     hooks.addContractInterface(borrowVaultAddr, vaultBorrowAbi)
     hooks.addContractInterface(evcAddress, [...evcEnableCollateralAbi, ...evcEnableControllerAbi])
-    tos.addTosInterface(hooks)
 
     if (!isSavingsAtSubAccount) {
       hooks.addPreHookCallFromSelf(vaultAddr, 'transfer', [subAccountAddr, amount])
@@ -320,8 +329,6 @@ export const createVaultBuilders = (
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, userAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (isSavingsAtSubAccount) {
       const transferCall: EVCCall = {
@@ -337,7 +344,7 @@ export const createVaultBuilders = (
       evcAddress,
       accountLensAddress: ctx.eulerLensAddresses.value!.accountLens as Address,
       subAccount: subAccountAddr as Address,
-      providerUrl: ctx.EVM_PROVIDER_URL,
+      providerUrl: ctx.rpcUrl,
       subgraphUrl: ctx.SUBGRAPH_URL,
     })
     if (cleanupCalls.length) {
@@ -365,7 +372,13 @@ export const createVaultBuilders = (
       data: hooks.getDataForCall(borrowVaultAddr, 'borrow', [borrowAmount, userAddr]) as Hash,
     }
 
-    evcCalls.push(enableControllerCall, enableCollateralCall, borrowCall)
+    if (!enabledController || enabledController.toLowerCase() !== borrowVaultAddr.toLowerCase()) {
+      evcCalls.push(enableControllerCall)
+    }
+    if (!isAlreadyEnabled(enabledCollaterals, vaultAddr)) {
+      evcCalls.push(enableCollateralCall)
+    }
+    evcCalls.push(borrowCall)
 
     await helpers.injectPythHealthCheckUpdates({
       evcCalls,
@@ -396,6 +409,7 @@ export const createVaultBuilders = (
     subAccount,
     includePermit2Call = true,
     enabledCollaterals,
+    enabledController,
   }: {
     supplyVaultAddress: string
     supplyAssetAddress: string
@@ -411,6 +425,7 @@ export const createVaultBuilders = (
     subAccount?: string
     includePermit2Call?: boolean
     enabledCollaterals?: string[]
+    enabledController?: string
   }): Promise<TxPlan> => {
     if (!ctx.address.value || !ctx.eulerCoreAddresses.value || !ctx.eulerPeripheryAddresses.value) {
       throw new Error('Wallet not connected or addresses not available')
@@ -425,7 +440,6 @@ export const createVaultBuilders = (
     const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
 
     const subAccountAddr = (subAccount || await getNewSubAccount(ctx.address.value)) as Address
-    const tos = await helpers.prepareTos(userAddr)
     const hasSwap = !!quote
     const borrowDepositAmount = hasSwap ? 0n : debtAmount
     const isSameVault = supplyVaultAddr.toLowerCase() === longVaultAddr.toLowerCase()
@@ -491,12 +505,9 @@ export const createVaultBuilders = (
     }
     hooks.addContractInterface(borrowVaultAddr, vaultBorrowAbi)
     hooks.addContractInterface(evcAddress, [...evcEnableControllerAbi, ...evcEnableCollateralAbi])
-    tos.addTosInterface(hooks)
 
     const saHooks = hooks.build()
     const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, userAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (permitCalls.length) {
       evcCalls.unshift(...permitCalls)
@@ -516,7 +527,7 @@ export const createVaultBuilders = (
       evcAddress,
       accountLensAddress: ctx.eulerLensAddresses.value!.accountLens as Address,
       subAccount: subAccountAddr as Address,
-      providerUrl: ctx.EVM_PROVIDER_URL,
+      providerUrl: ctx.rpcUrl,
       subgraphUrl: ctx.SUBGRAPH_URL,
     })
     if (cleanupCalls.length) {
@@ -561,7 +572,13 @@ export const createVaultBuilders = (
       data: hooks.getDataForCall(borrowVaultAddr, 'borrow', [borrowAmount, borrowRecipient]) as Hash,
     }
 
-    evcCalls.push(enableControllerCall, enableSupplyCollateralCall, borrowCall)
+    if (!enabledController || enabledController.toLowerCase() !== borrowVaultAddr.toLowerCase()) {
+      evcCalls.push(enableControllerCall)
+    }
+    if (!isAlreadyEnabled(enabledCollaterals, supplyVaultAddr)) {
+      evcCalls.push(enableSupplyCollateralCall)
+    }
+    evcCalls.push(borrowCall)
 
     if (hasSwap) {
       if (quote!.verify.type !== SwapVerificationType.SkimMin) {
@@ -648,7 +665,7 @@ export const createVaultBuilders = (
       evcCalls.push(depositBorrowedCall)
     }
 
-    if (!isSameVault) {
+    if (!isSameVault && !isAlreadyEnabled(enabledCollaterals, longVaultAddr)) {
       const enableLongCollateralCall: EVCCall = {
         targetContract: evcAddress,
         onBehalfOfAccount: '0x0000000000000000000000000000000000000000' as Address,
@@ -675,161 +692,6 @@ export const createVaultBuilders = (
     return { kind: 'multiply', steps }
   }
 
-  const buildDualCollateralBorrowPlan = async (params: {
-    refVaultAddress: string
-    refAssetAddress: string
-    refAmount: bigint
-    cstVaultAddress: string
-    cstAssetAddress: string
-    cstAmount: bigint
-    borrowVaultAddress: string
-    borrowAmount: bigint
-    subAccount?: string
-    enabledCollaterals?: string[]
-  }): Promise<TxPlan> => {
-    if (!ctx.address.value || !ctx.eulerCoreAddresses.value || !ctx.eulerPeripheryAddresses.value) {
-      throw new Error('Wallet not connected or addresses not available')
-    }
-
-    const {
-      refVaultAddress, refAssetAddress, refAmount,
-      cstVaultAddress, cstAssetAddress, cstAmount,
-      borrowVaultAddress, borrowAmount: bAmount,
-    } = params
-
-    const refVaultAddr = refVaultAddress as Address
-    const refAssetAddr = refAssetAddress as Address
-    const cstVaultAddr = cstVaultAddress as Address
-    const cstAssetAddr = cstAssetAddress as Address
-    const borrowVaultAddr = borrowVaultAddress as Address
-    const userAddr = ctx.address.value as Address
-    const evcAddress = ctx.eulerCoreAddresses.value.evc as Address
-
-    const subAccountAddr = (params.subAccount || await getNewSubAccount(ctx.address.value)) as Address
-
-    const tos = await helpers.prepareTos(userAddr)
-
-    const steps: TxStep[] = []
-    let refPermitCall: EVCCall | undefined
-    let cstPermitCall: EVCCall | undefined
-
-    if (refAmount > 0n) {
-      const approval = await helpers.prepareTokenApproval({
-        assetAddr: refAssetAddr,
-        spenderAddr: refVaultAddr,
-        userAddr,
-        amount: refAmount,
-        includePermit2Call: true,
-      })
-      steps.push(...approval.steps)
-      refPermitCall = approval.permitCall
-    }
-
-    if (cstAmount > 0n) {
-      const approval = await helpers.prepareTokenApproval({
-        assetAddr: cstAssetAddr,
-        spenderAddr: cstVaultAddr,
-        userAddr,
-        amount: cstAmount,
-        includePermit2Call: true,
-      })
-      steps.push(...approval.steps)
-      cstPermitCall = approval.permitCall
-    }
-
-    const hooks = new SaHooksBuilder()
-    hooks.addContractInterface(refVaultAddr, vaultDepositAbi)
-    hooks.addContractInterface(cstVaultAddr, vaultDepositAbi)
-    hooks.addContractInterface(borrowVaultAddr, vaultBorrowAbi)
-    hooks.addContractInterface(evcAddress, [...evcEnableControllerAbi, ...evcEnableCollateralAbi])
-    tos.addTosInterface(hooks)
-
-    const saHooks = hooks.build()
-    const evcCalls = convertSaHooksToEVCCalls(saHooks, userAddr, userAddr)
-
-    tos.injectTosCall(evcCalls, hooks)
-
-    if (refPermitCall) evcCalls.unshift(refPermitCall)
-    if (cstPermitCall) evcCalls.unshift(cstPermitCall)
-
-    const cleanupCalls = await buildCollateralCleanupCalls({
-      evcAddress,
-      accountLensAddress: ctx.eulerLensAddresses.value!.accountLens as Address,
-      subAccount: subAccountAddr,
-      providerUrl: ctx.EVM_PROVIDER_URL,
-      subgraphUrl: ctx.SUBGRAPH_URL,
-    })
-    if (cleanupCalls.length) {
-      evcCalls.push(...cleanupCalls)
-    }
-
-    const depositRefCall: EVCCall = {
-      targetContract: refVaultAddr,
-      onBehalfOfAccount: userAddr,
-      value: 0n,
-      data: hooks.getDataForCall(refVaultAddr, 'deposit', [refAmount, subAccountAddr]) as Hash,
-    }
-
-    const depositCstCall: EVCCall = {
-      targetContract: cstVaultAddr,
-      onBehalfOfAccount: userAddr,
-      value: 0n,
-      data: hooks.getDataForCall(cstVaultAddr, 'deposit', [cstAmount, subAccountAddr]) as Hash,
-    }
-
-    const enableControllerCall: EVCCall = {
-      targetContract: evcAddress,
-      onBehalfOfAccount: '0x0000000000000000000000000000000000000000' as Address,
-      value: 0n,
-      data: hooks.getDataForCall(evcAddress, 'enableController', [subAccountAddr, borrowVaultAddr]) as Hash,
-    }
-
-    const enableRefCollateralCall: EVCCall = {
-      targetContract: evcAddress,
-      onBehalfOfAccount: '0x0000000000000000000000000000000000000000' as Address,
-      value: 0n,
-      data: hooks.getDataForCall(evcAddress, 'enableCollateral', [subAccountAddr, refVaultAddr]) as Hash,
-    }
-
-    const enableCstCollateralCall: EVCCall = {
-      targetContract: evcAddress,
-      onBehalfOfAccount: '0x0000000000000000000000000000000000000000' as Address,
-      value: 0n,
-      data: hooks.getDataForCall(evcAddress, 'enableCollateral', [subAccountAddr, cstVaultAddr]) as Hash,
-    }
-
-    const borrowCall: EVCCall = {
-      targetContract: borrowVaultAddr,
-      onBehalfOfAccount: subAccountAddr,
-      value: 0n,
-      data: hooks.getDataForCall(borrowVaultAddr, 'borrow', [bAmount, userAddr]) as Hash,
-    }
-
-    evcCalls.push(
-      depositRefCall,
-      depositCstCall,
-      enableControllerCall,
-      enableRefCollateralCall,
-      enableCstCollateralCall,
-      borrowCall,
-    )
-
-    await helpers.injectPythHealthCheckUpdates({
-      evcCalls,
-      liabilityVaultAddr: borrowVaultAddr,
-      enabledCollaterals: params.enabledCollaterals,
-      additionalCollaterals: [refVaultAddr, cstVaultAddr],
-      userAddr,
-    })
-
-    steps.push(helpers.buildEvcBatchStep({
-      evcCalls,
-      label: 'Dual-collateral borrow via EVC',
-    }))
-
-    return { kind: 'cork-borrow', steps }
-  }
-
   return {
     buildSupplyPlan,
     buildWithdrawPlan,
@@ -837,6 +699,5 @@ export const createVaultBuilders = (
     buildBorrowPlan,
     buildBorrowBySavingPlan,
     buildMultiplyPlan,
-    buildDualCollateralBorrowPlan,
   }
 }

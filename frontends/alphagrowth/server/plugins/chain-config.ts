@@ -7,9 +7,14 @@
  * accessible to the client synchronously via window.__CHAIN_CONFIG__.
  */
 export default defineNitroPlugin((nitroApp) => {
-  const enabledChainIds = Object.keys(process.env)
-    .filter(k => /^RPC_URL_HTTP_\d+$/.test(k) && process.env[k])
-    .map(k => Number(k.replace('RPC_URL_HTTP_', '')))
+  const enabledChainIds: number[] = []
+
+  for (const [key, value] of Object.entries(process.env)) {
+    const rpcMatch = key.match(/^RPC_URL_HTTP_(\d+)$/)
+    if (rpcMatch && value) {
+      enabledChainIds.push(Number(rpcMatch[1]))
+    }
+  }
 
   const subgraphUris: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
@@ -18,6 +23,8 @@ export default defineNitroPlugin((nitroApp) => {
       subgraphUris[match[1]] = value
     }
   }
+
+  enabledChainIds.sort((a, b) => a - b)
 
   const scriptTag = `<script>window.__CHAIN_CONFIG__=${JSON.stringify({ enabledChainIds, subgraphUris })}</script>`
 

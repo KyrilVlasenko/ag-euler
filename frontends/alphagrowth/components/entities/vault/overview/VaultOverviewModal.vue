@@ -6,8 +6,9 @@ import type { AccountBorrowPosition } from '~/entities/account'
 
 const emits = defineEmits(['close'])
 const router = useRouter()
+const route = useRoute()
 
-const { pair, vault, earnVault, extraVault, securitizeVault, collateralVaults } = defineProps<{ pair?: AnyBorrowVaultPair | AccountBorrowPosition, vault?: Vault, earnVault?: EarnVault, extraVault?: Vault, securitizeVault?: SecuritizeVault, collateralVaults?: (Vault | SecuritizeVault)[] }>()
+const { pair, vault, earnVault, extraVault, securitizeVault, collateralVaults, title = 'Market information' } = defineProps<{ pair?: AnyBorrowVaultPair | AccountBorrowPosition, vault?: Vault, earnVault?: EarnVault, extraVault?: Vault, securitizeVault?: SecuritizeVault, collateralVaults?: (Vault | SecuritizeVault)[], title?: string }>()
 
 const tab = ref()
 const normalizeAddress = (address?: string) => {
@@ -78,9 +79,9 @@ const activeCollateralVault = computed(() => {
   return collaterals?.[index] ?? null
 })
 
-const onVaultClick = (address: string) => {
+const navigateToBorrow = (collateralAddress: string, borrowVaultAddress: string) => {
   emits('close')
-  router.push(`/lend/${address}`)
+  router.push({ path: `/borrow/${collateralAddress}/${borrowVaultAddress}`, query: { network: route.query.network } })
 }
 </script>
 
@@ -88,13 +89,15 @@ const onVaultClick = (address: string) => {
   <BaseModalWrapper
     class="w-full max-w-[500px]"
     full
-    title="Market information"
+    :title="title"
     @close="$emit('close')"
   >
     <UiTabs
       v-if="tabs.length"
       v-model="tab"
       class="mb-12 mx-[-16px]"
+      rounded
+      pills
       :list="tabs"
     >
       <template #default="{ tab: slotTab }">
@@ -126,17 +129,17 @@ const onVaultClick = (address: string) => {
           <VaultOverview
             v-else-if="activeCollateralVault"
             :vault="(activeCollateralVault as Vault)"
-            @vault-click="onVaultClick"
+            @vault-click="(address: string) => navigateToBorrow(address, (activeCollateralVault as Vault).address)"
           />
           <VaultOverview
             v-else-if="tab === 'multiply-collateral' && extraVault"
             :vault="extraVault"
-            @vault-click="onVaultClick"
+            @vault-click="(address: string) => navigateToBorrow(address, extraVault!.address)"
           />
           <VaultOverview
             v-else-if="tab === 'borrow'"
             :vault="pair.borrow"
-            @vault-click="onVaultClick"
+            @vault-click="(address: string) => navigateToBorrow(address, pair!.borrow.address)"
           />
         </Transition>
       </template>
@@ -144,7 +147,7 @@ const onVaultClick = (address: string) => {
       <template v-else-if="vault">
         <VaultOverview
           :vault="vault"
-          @vault-click="onVaultClick"
+          @vault-click="(address: string) => navigateToBorrow(address, vault!.address)"
         />
       </template>
 
@@ -157,7 +160,7 @@ const onVaultClick = (address: string) => {
       <template v-else-if="earnVault">
         <VaultOverviewEarn
           :vault="earnVault"
-          @vault-click="onVaultClick"
+          @vault-click="(address: string) => { emits('close'); router.push({ path: `/lend/${address}`, query: { network: route.query.network } }) }"
         />
       </template>
     </div>

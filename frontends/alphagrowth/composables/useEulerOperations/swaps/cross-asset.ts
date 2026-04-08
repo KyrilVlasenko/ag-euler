@@ -49,8 +49,6 @@ export const createCrossAssetSwapBuilders = (
 
     assertSwapperVerifierAllowed(quote.verify.verifierAddress, ctx.eulerPeripheryAddresses.value.swapVerifier)
 
-    const tos = await helpers.prepareTos(userAddr)
-
     if (isRepay && quote.verify.type !== SwapVerificationType.DebtMax) {
       throw new Error('Swap verifier type mismatch')
     }
@@ -88,11 +86,7 @@ export const createCrossAssetSwapBuilders = (
       hooks.addContractInterface(evcAddress, evcAbis)
     }
 
-    tos.addTosInterface(hooks)
-
     const evcCalls: EVCCall[] = []
-
-    tos.injectTosCall(evcCalls, hooks)
 
     if (isDebtSwap) {
       evcCalls.push({

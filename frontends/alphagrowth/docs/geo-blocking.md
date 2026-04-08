@@ -26,19 +26,21 @@ A vault that is **blocked** for the user's country prevents **all** new operatio
 
 ### Restricted (Soft Block)
 
-A vault that is **restricted** for the user's country prevents the user from **acquiring more exposure** to the asset through the app. Operations that use assets already in the user's wallet, or that reduce exposure, remain allowed.
+A vault that is **restricted** for the user's country prevents the user from **acquiring more exposure** to the asset and from **performing any swap involving the asset**. Operations that use assets already in the user's wallet without swapping, or that reduce exposure without swapping, remain allowed.
 
 | Action | Blocked (lending deposit) | Blocked (borrow position) | Restricted |
 |--------|--------------------------|---------------------------|------------|
-| Supply from wallet | NO | NO | YES |
+| Supply from wallet (no swap) | NO | NO | YES |
+| Supply via swap (swap + deposit) | NO | NO | **NO** |
 | Earn deposit from wallet | NO | NO | YES |
-| Withdraw (lending deposit) | YES | — | YES |
-| Withdraw (position collateral) | — | NO | YES |
+| Withdraw to underlying (no swap) | YES | NO | YES |
+| Withdraw via swap (withdraw + swap) | — | NO | **NO** |
 | Repay | — | YES | YES |
 | Borrow from this vault | NO | NO | **NO** |
 | Multiply (as long or short) | NO | NO | **NO** |
+| Swap + deposit + borrow (collateral vault restricted) | NO | NO | **NO** |
 | Swap collateral/debt TO this vault | NO | NO | **NO** |
-| Swap collateral/debt FROM this vault | NO | NO | YES |
+| Swap collateral/debt FROM this vault | NO | NO | **NO** |
 
 When both collateral AND borrow vault in a pair are restricted, the pair is treated as **effectively blocked** — identical to a hard block in the UI. On the borrow browse page this means opacity dimming + "Restricted" chip. On the position overview, all buttons except Repay are disabled and the same "Region restricted" toast is shown as for hard-blocked positions.
 
@@ -277,7 +279,7 @@ App Startup
   ├─ loadCountry() ─► HEAD request ─► x-country-code header ─► country ref ("DE")
   │                                                              (5-min cache)
   │
-  └─ loadLabels() ──► euler-labels GitHub repo ─► products.json ─► product.block
+  └─ loadLabels() ──► euler-labels data source (GitHub or S3/CDN) ─► products.json ─► product.block
                                                                     product.vaultOverrides[addr].block
                                                                     product.vaultOverrides[addr].restricted
                                                  ► earn-vaults.json ─► earnVaultBlocks map
@@ -325,7 +327,7 @@ All blocking and restriction configuration lives outside the app codebase:
 | Earn vault blocks | `euler-labels` repo — `earn-vaults.json` `block` field | Hard-blocks specific earn vaults |
 | Earn vault restrictions | `euler-labels` repo — `earn-vaults.json` `restricted` field | Soft-restricts specific earn vaults |
 
-Changes to `products.json` or `earn-vaults.json` in the euler-labels repo take effect within 5 minutes (the label cache TTL) without any app deployment.
+Changes to `products.json` or `earn-vaults.json` in the euler-labels data source (GitHub repo or S3/CDN) take effect within 5 minutes (the label cache TTL) without any app deployment.
 
 ## Key Files
 

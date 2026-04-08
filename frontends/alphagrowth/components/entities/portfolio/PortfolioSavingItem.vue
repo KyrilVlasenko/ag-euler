@@ -4,6 +4,7 @@ import type { Vault } from '~/entities/vault'
 import { getUtilisationWarning } from '~/composables/useVaultWarnings'
 import { getAssetUsdValue, formatAssetValue } from '~/services/pricing/priceProvider'
 import { isVaultBlockedByCountry } from '~/composables/useGeoBlock'
+import { isVaultDeprecated, getVaultNotice } from '~/utils/eulerLabelsUtils'
 import { formatNumber, compactNumber, formatCompactUsdValue, formatSmartAmount } from '~/utils/string-utils'
 import { nanoToValue, roundAndCompactTokens } from '~/utils/crypto-utils'
 import { type AccountDepositPosition, getSubAccountIndex } from '~/entities/account'
@@ -32,7 +33,6 @@ const utilisationWarning = computed(() => {
 
 // Check if securitize vault by type field
 const isSecuritize = computed(() => 'type' in vault.value && vault.value.type === 'securitize')
-const regularVault = computed(() => isSecuritize.value ? null : vault.value as Vault)
 
 const rewardsExist = computed(() => hasSupplyRewards(vault.value.address))
 const supplyApy = computed(() => {
@@ -45,8 +45,10 @@ const supplyApyWithRewards = computed(() => supplyApy.value + getSupplyRewardApy
 
 const product = useEulerProductOfVault(computed(() => vault.value.address))
 const isGeoBlocked = computed(() => isVaultBlockedByCountry(vault.value.address))
+const isDeprecated = computed(() => isVaultDeprecated(vault.value.address))
 const isEscrow = computed(() => 'vaultCategory' in vault.value && vault.value.vaultCategory === 'escrow')
 const isUnverified = computed(() => 'verified' in vault.value && !vault.value.verified)
+const vaultNotice = computed(() => getVaultNotice(vault.value.address))
 const displayName = computed(() => {
   if (isEscrow.value) return 'Escrowed collateral'
   return product.name || vault.value.name
@@ -55,11 +57,7 @@ const displayName = computed(() => {
 const supplyValueDisplay = ref('-')
 
 const updateSupplyValueDisplay = async () => {
-  if (!regularVault.value) {
-    supplyValueDisplay.value = `${formatSmartAmount(nanoToValue(position.assets, vault.value.asset.decimals))} ${vault.value.asset.symbol}`
-    return
-  }
-  const price = await formatAssetValue(position.assets, regularVault.value, 'off-chain')
+  const price = await formatAssetValue(position.assets, vault.value, 'off-chain')
   supplyValueDisplay.value = price.hasPrice ? formatCompactUsdValue(price.usdValue) : price.display
 }
 
@@ -70,11 +68,7 @@ watchEffect(() => {
 const hasPrice = ref(false)
 
 const updateHasPrice = async () => {
-  if (!regularVault.value) {
-    hasPrice.value = false
-    return
-  }
-  const price = await getAssetUsdValue(position.assets, regularVault.value, 'off-chain')
+  const price = await getAssetUsdValue(position.assets, vault.value, 'off-chain')
   hasPrice.value = price !== undefined && price > 0
 }
 
@@ -85,11 +79,7 @@ watchEffect(() => {
 const projectedEarningsPerMonth = ref('—')
 
 const updateProjectedEarningsPerMonth = async () => {
-  if (!regularVault.value) {
-    projectedEarningsPerMonth.value = '—'
-    return
-  }
-  const price = await getAssetUsdValue(position.assets, regularVault.value, 'off-chain')
+  const price = await getAssetUsdValue(position.assets, vault.value, 'off-chain')
   if (price === undefined || price === 0) {
     projectedEarningsPerMonth.value = '—'
     return
@@ -123,8 +113,8 @@ const onSupplyInfoIconClick = (event: MouseEvent) => {
 const onClick = () => {
   modal.open(VaultOverviewModal, {
     props: isSecuritize.value
-      ? { securitizeVault: vault.value }
-      : { vault: vault.value },
+      ? { title: 'Vault information', securitizeVault: vault.value }
+      : { title: 'Vault information', vault: vault.value },
   })
 }
 </script>
@@ -141,6 +131,7 @@ const onClick = () => {
         <AssetAvatar
           :asset="vault.asset"
           size="40"
+          :increased-spacing="true"
         />
         <div class="flex-grow ml-12">
           <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
@@ -158,6 +149,17 @@ const onClick = () => {
                 class="!w-14 !h-14"
               />
               Restricted
+            </span>
+            <span
+              v-if="isDeprecated"
+              class="inline-flex items-center gap-4 rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5"
+              title="This vault has been deprecated."
+            >
+              <SvgIcon
+                name="warning"
+                class="!w-14 !h-14"
+              />
+              Deprecated
             </span>
           </div>
           <div class="text-h5 text-content-primary">
@@ -187,6 +189,7 @@ const onClick = () => {
     </div>
     <div class="flex py-12 px-16 pb-16">
       <div class="flex flex-col gap-12 w-full">
+        <PortfolioNotice :notice="vaultNotice" />
         <div class="flex justify-between">
           <div class="text-content-tertiary text-p3">
             Supply value
@@ -202,7 +205,7 @@ const onClick = () => {
           @click.stop
         >
           <UiButton
-            :to="isGeoBlocked ? undefined : `/lend/${vault.address}/`"
+            :to="isGeoBlocked ? undefined : { path: `/lend/${vault.address}/`, query: { network: $route.query.network } }"
             :disabled="isGeoBlocked"
             rounded
           >
@@ -210,14 +213,14 @@ const onClick = () => {
           </UiButton>
           <UiButton
             variant="primary-stroke"
-            :to="`/lend/${vault.address}/${subAccountIndex}/withdraw`"
+            :to="{ path: `/lend/${vault.address}/${subAccountIndex}/withdraw`, query: { network: $route.query.network } }"
             rounded
           >
             Withdraw
           </UiButton>
           <UiButton
             variant="primary-stroke"
-            :to="isGeoBlocked ? undefined : `/lend/${vault.address}/${subAccountIndex}/swap`"
+            :to="isGeoBlocked ? undefined : { path: `/lend/${vault.address}/${subAccountIndex}/swap`, query: { network: $route.query.network } }"
             :disabled="isGeoBlocked"
             rounded
           >
@@ -246,10 +249,6 @@ const onClick = () => {
               :name="displayName"
               :is-unverified="isUnverified"
             />
-            <VaultWarningIcon
-              :warning="utilisationWarning"
-              tooltip-placement="top-start"
-            />
             <span
               v-if="isGeoBlocked"
               class="inline-flex items-center gap-4 rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5"
@@ -260,6 +259,17 @@ const onClick = () => {
                 class="!w-14 !h-14"
               />
               Restricted
+            </span>
+            <span
+              v-if="isDeprecated"
+              class="inline-flex items-center gap-4 rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5"
+              title="This vault has been deprecated."
+            >
+              <SvgIcon
+                name="warning"
+                class="!w-14 !h-14"
+              />
+              Deprecated
             </span>
           </div>
           <div class="text-h5 text-content-primary">
@@ -289,6 +299,8 @@ const onClick = () => {
     </div>
     <div class="flex py-12 px-16 pb-16">
       <div class="flex flex-col gap-12 w-full">
+        <PortfolioNotice :notice="vaultNotice" />
+        <VaultWarningBanner :warnings="[utilisationWarning]" />
         <div class="flex justify-between">
           <div class="text-content-tertiary text-p3">
             Supply value
@@ -298,10 +310,10 @@ const onClick = () => {
               {{ supplyValueDisplay }}
             </div>
             <div
-              v-if="regularVault && hasPrice"
+              v-if="hasPrice"
               class="text-content-tertiary text-p3"
             >
-              ~ {{ roundAndCompactTokens(position.assets, regularVault.decimals) }}
+              ~ {{ roundAndCompactTokens(position.assets, vault.decimals) }}
               {{ vault.asset.symbol }}
             </div>
           </div>
@@ -324,7 +336,7 @@ const onClick = () => {
           @click.stop
         >
           <UiButton
-            :to="isGeoBlocked ? undefined : `/lend/${vault.address}/`"
+            :to="isGeoBlocked ? undefined : { path: `/lend/${vault.address}/`, query: { network: $route.query.network } }"
             :disabled="isGeoBlocked"
             rounded
           >
@@ -332,14 +344,14 @@ const onClick = () => {
           </UiButton>
           <UiButton
             variant="primary-stroke"
-            :to="`/lend/${vault.address}/${subAccountIndex}/withdraw`"
+            :to="{ path: `/lend/${vault.address}/${subAccountIndex}/withdraw`, query: { network: $route.query.network } }"
             rounded
           >
             Withdraw
           </UiButton>
           <UiButton
             variant="primary-stroke"
-            :to="isGeoBlocked ? undefined : `/lend/${vault.address}/${subAccountIndex}/swap`"
+            :to="isGeoBlocked ? undefined : { path: `/lend/${vault.address}/${subAccountIndex}/swap`, query: { network: $route.query.network } }"
             :disabled="isGeoBlocked"
             rounded
           >

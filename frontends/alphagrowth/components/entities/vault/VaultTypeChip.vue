@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import type { Vault, EarnVault, SecuritizeVault } from '~/entities/vault'
+import { getVaultTypeLabel, getVaultTypeDescription } from '~/entities/vault/descriptions'
+import { useModal } from '~/components/ui/composables/useModal'
+import { VaultTypeInfoModal } from '#components'
 
 const { type, vault } = defineProps<{
   type: string
   vault: Vault | EarnVault | SecuritizeVault
 }>()
 
+const modal = useModal()
 const { isVaultGovernorVerified, isEarnVaultOwnerVerified } = useVaults()
 
 // Check if vault is verified by checking governorAdmin/owner matches declared entities
@@ -18,7 +22,7 @@ const isVerified = computed(() => {
     return isEarnVaultOwnerVerified(vault as EarnVault)
   }
 
-  // governed, ungoverned, securitize
+  // governed, governanceLimited, ungoverned, securitize
   return isVaultGovernorVerified(vault as Vault)
 })
 
@@ -30,6 +34,7 @@ const icon = computed(() => {
   }
   switch (type) {
     case 'governed':
+    case 'governanceLimited':
     case 'managed':
       return 'bank'
     case 'escrow':
@@ -49,6 +54,8 @@ const label = computed(() => {
   switch (type) {
     case 'governed':
       return 'Governed'
+    case 'governanceLimited':
+      return 'Governed - limited'
     case 'managed':
       return 'Managed'
     case 'escrow':
@@ -63,12 +70,24 @@ const label = computed(() => {
 
   return 'Unknown'
 })
+
+const effectiveType = computed(() => isVerified.value ? type : 'unknown')
+
+const openModal = () => {
+  modal.open(VaultTypeInfoModal, {
+    props: {
+      title: getVaultTypeLabel(effectiveType.value, isVerified.value),
+      description: getVaultTypeDescription(effectiveType.value, isVerified.value),
+    },
+  })
+}
 </script>
 
 <template>
   <div
-    class="vault-type-chip flex gap-8 items-center py-8 px-12 rounded-8"
+    class="vault-type-chip flex gap-8 items-center py-8 px-12 rounded-8 cursor-pointer"
     :class="{ 'vault-type-chip--warning': isWarning }"
+    @click="openModal"
   >
     <UiIcon
       class="mr-2 !w-20 !h-20"
@@ -80,21 +99,21 @@ const label = computed(() => {
 
 <style scoped lang="scss">
 .vault-type-chip {
-  background-color: rgba(196, 155, 100, 0.15);
+  background-color: rgba(var(--accent-rgb), 0.15);
   color: var(--accent-600);
 
   [data-theme="dark"] & {
-    background-color: rgba(212, 169, 90, 0.2);
+    background-color: rgba(var(--accent-rgb), 0.2);
     color: var(--accent-500);
   }
 
   &--warning {
-    background-color: var(--c-red-opaque-200);
-    color: var(--c-red-700);
+    background-color: rgba(var(--error-rgb), 0.1);
+    color: var(--error-500);
 
     [data-theme="dark"] & {
-      background-color: var(--c-red-opaque-200);
-      color: var(--c-red-700);
+      background-color: rgba(var(--error-rgb), 0.1);
+      color: var(--error-500);
     }
   }
 }

@@ -1,4 +1,4 @@
-import { ref, computed, toValue, reactive, type MaybeRefOrGetter } from 'vue'
+import { ref, computed, toValue, reactive, watch, type MaybeRefOrGetter } from 'vue'
 
 export function usePriceInvert(
   symbolA: MaybeRefOrGetter<string | undefined>,
@@ -23,5 +23,22 @@ export function usePriceInvert(
     return isInverted.value ? `${b}/${a}` : `${a}/${b}`
   })
 
-  return reactive({ isInverted, toggle, invertValue, displaySymbol })
+  // Auto-invert based on the first valid price value.
+  // Call after the price ref/computed is defined to avoid TDZ issues.
+  let autoInvertDone = false
+  const autoInvert = (value: MaybeRefOrGetter<number | null | undefined>) => {
+    watch(
+      () => toValue(value),
+      (val) => {
+        if (autoInvertDone) return
+        if (val != null && val > 0 && Number.isFinite(val)) {
+          autoInvertDone = true
+          isInverted.value = val < 1
+        }
+      },
+      { immediate: true },
+    )
+  }
+
+  return reactive({ isInverted, toggle, invertValue, displaySymbol, autoInvert })
 }

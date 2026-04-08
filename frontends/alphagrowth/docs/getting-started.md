@@ -11,7 +11,7 @@ Welcome to the Euler Lite project! This guide will help you get up and running w
 - **Lending**: Users can deposit assets to earn yield
 - **Borrowing**: Users can borrow assets using collateral
 - **Portfolio Management**: Track positions and performance
-- **Rewards**: Participate in Merkl reward programs
+- **Rewards**: Participate in Merkl, Incentra, and Fuul reward programs
 - **Multi-chain**: Connect to any EVM-compatible network
 
 ## 🏗️ Technology Stack
@@ -83,7 +83,7 @@ Welcome to the Euler Lite project! This guide will help you get up and running w
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build
-- `npm run generate` - Generate static site
+- `npm run generate` - Generate static site (requires a running backend for data proxy endpoints)
 - `npm run lint` - Run ESLint
 
 ## Environment Configuration
@@ -132,6 +132,12 @@ NUXT_PUBLIC_SUBGRAPH_URI_1=https://your-subgraph.com
 - **Purpose**: Reward distribution and management
 - **Integration**: API for opportunities and rewards
 - **Data Source**: Campaign information, user rewards
+
+### Fuul
+
+- **Purpose**: Incentive campaign distribution
+- **Integration**: API for incentive campaigns
+- **Data Source**: Campaign APR data (claiming not yet available)
 
 ## 🆘 Common Issues
 

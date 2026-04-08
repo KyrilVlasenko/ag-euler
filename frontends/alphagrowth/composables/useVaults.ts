@@ -1,4 +1,4 @@
-import { getAddress } from 'viem'
+import { getAddress, zeroAddress } from 'viem'
 import { useVaultRegistry } from './useVaultRegistry'
 import { logWarn } from '~/utils/errorHandling'
 import {
@@ -12,20 +12,23 @@ import {
   fetchEscrowAddresses,
   fetchSecuritizeVault,
   fetchVaults,
-  fetchVaultFactories,
   clearPriceCaches,
-  isSecuritizeVault,
   type Vault,
 } from '~/entities/vault'
-import { getProductByVault } from '~/utils/eulerLabelsUtils'
+import { fetchVaultFactories, isSecuritizeVault } from '~/entities/vault/factory'
+import { getProductByVault, isVaultNotExplorable } from '~/utils/eulerLabelsUtils'
+import { getEulerRouterGovernor } from '~/entities/oracle'
 
 const isReady = ref(false)
-const isLoading = ref(false)
-const isUpdating = ref(false)
+const isEVKLoading = ref(false)
+const isEVKUpdating = ref(false)
 const loadedChainId = ref<number | null>(null)
 
 const isEarnLoading = ref(false)
 const isEarnUpdating = ref(false)
+
+const isSecuritizeLoading = ref(false)
+const isSecuritizeUpdating = ref(false)
 
 const isEscrowLoading = ref(false)
 const isEscrowUpdating = ref(false)
@@ -48,6 +51,7 @@ const borrowList = computed((): AnyBorrowVaultPair[] => {
 
       const collateralVault = registryGetVault(ltv.collateral)
       if (!collateralVault) return
+      if (isVaultNotExplorable(collateralVault.address)) return
 
       pairs.push({
         borrow: borrowVault,
@@ -69,58 +73,41 @@ const resetVaultsState = () => {
 
   loadGeneration.value++
   isReady.value = false
-  isLoading.value = true
+  isEVKLoading.value = true
+  isEVKUpdating.value = true
   isEarnLoading.value = true
+  isEarnUpdating.value = true
+  isSecuritizeLoading.value = true
+  isSecuritizeUpdating.value = true
+  isEscrowUpdating.value = true
   isEscrowLoadedOnce.value = false
   loadedChainId.value = null
   clear()
   clearPriceCaches()
 }
 
-const updateVaults = async (vaultAddresses?: string[], generation?: number) => {
-  const { set: registrySet } = useVaultRegistry()
+const updateEVKVaults = async (vaultAddresses: string[], generation?: number, silent = false) => {
+  const { set: registrySet, getVault: registryGetVault } = useVaultRegistry()
   const gen = generation ?? loadGeneration.value
 
   try {
-    isUpdating.value = true
-    isLoading.value = true
+    if (!silent) {
+      isEVKUpdating.value = true
+      isEVKLoading.value = true
+    }
 
     for await (const result of fetchVaults(vaultAddresses)) {
       if (loadGeneration.value !== gen) return
 
       result.vaults.forEach((vault) => {
-        registrySet(vault.address, vault, 'evk')
+        const existing = registryGetVault(vault.address) as Vault | undefined
+        const vaultCategory = existing?.vaultCategory
+        registrySet(vault.address, vaultCategory ? { ...vault, vaultCategory } : vault, 'evk')
       })
 
-      isLoading.value = false
-
-      if (result.isFinished) {
-        break
+      if (!silent) {
+        isEVKLoading.value = false
       }
-    }
-  }
-  finally {
-    if (loadGeneration.value === gen) {
-      isUpdating.value = false
-    }
-  }
-}
-const updateEarnVaults = async (generation?: number) => {
-  const { set: registrySet } = useVaultRegistry()
-  const gen = generation ?? loadGeneration.value
-
-  try {
-    isEarnUpdating.value = true
-    isEarnLoading.value = true
-
-    for await (const result of fetchEarnVaults()) {
-      if (loadGeneration.value !== gen) return
-
-      result.vaults.forEach((vault) => {
-        registrySet(vault.address, vault, 'earn')
-      })
-
-      isEarnLoading.value = false
 
       if (result.isFinished) {
         break
@@ -128,10 +115,45 @@ const updateEarnVaults = async (generation?: number) => {
     }
   }
   catch (e) {
-    if (loadGeneration.value === gen) {
+    logWarn('useVaults/updateEVKVaults', e)
+  }
+  finally {
+    if (!silent && loadGeneration.value === gen) {
+      isEVKUpdating.value = false
+    }
+  }
+}
+const updateEarnVaults = async (vaultAddresses: string[], generation?: number, silent = false) => {
+  const { set: registrySet } = useVaultRegistry()
+  const gen = generation ?? loadGeneration.value
+
+  try {
+    if (!silent) {
+      isEarnUpdating.value = true
+      isEarnLoading.value = true
+    }
+
+    for await (const result of fetchEarnVaults(vaultAddresses)) {
+      if (loadGeneration.value !== gen) return
+
+      result.vaults.forEach((vault) => {
+        registrySet(vault.address, vault, 'earn')
+      })
+
+      if (!silent) {
+        isEarnLoading.value = false
+      }
+
+      if (result.isFinished) {
+        break
+      }
+    }
+  }
+  catch (e) {
+    logWarn('useVaults/updateEarnVaults', e)
+    if (!silent && loadGeneration.value === gen) {
       isEarnUpdating.value = false
     }
-    throw e
   }
   // Note: isEarnUpdating is set to false in loadVaults() after all vaults are loaded
 }
@@ -192,30 +214,48 @@ const fetchNeededEscrowVaults = async (addresses: string[], generation: number):
   })
 }
 
-const updateSecuritizeVaults = async (securitizeAddresses: string[], generation: number) => {
+const updateSecuritizeVaults = async (securitizeAddresses: string[], generation: number, silent = false) => {
   const { set: registrySet } = useVaultRegistry()
 
   if (!securitizeAddresses.length || loadGeneration.value !== generation) {
     return
   }
 
-  // Fetch securitize vault details
-  const results = await Promise.allSettled(
-    securitizeAddresses.map(addr => fetchSecuritizeVault(addr)),
-  )
-
-  if (loadGeneration.value !== generation) return
-
-  results.forEach((result) => {
-    if (result.status === 'fulfilled') {
-      registrySet(result.value.address, result.value, 'securitize')
+  try {
+    if (!silent) {
+      isSecuritizeUpdating.value = true
+      isSecuritizeLoading.value = true
     }
-  })
+
+    const results = await Promise.allSettled(
+      securitizeAddresses.map(addr => fetchSecuritizeVault(addr)),
+    )
+
+    if (loadGeneration.value !== generation) return
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        registrySet(result.value.address, result.value, 'securitize')
+      }
+      else {
+        logWarn(`useVaults/updateSecuritizeVaults/${securitizeAddresses[index]}`, result.reason)
+      }
+    })
+  }
+  catch (e) {
+    logWarn('useVaults/updateSecuritizeVaults', e)
+  }
+  finally {
+    if (!silent && loadGeneration.value === generation) {
+      isSecuritizeUpdating.value = false
+      isSecuritizeLoading.value = false
+    }
+  }
 }
 
 const loadVaults = async () => {
   const { chainId, eulerPeripheryAddresses } = useEulerAddresses()
-  const { verifiedVaultAddresses } = useEulerLabels()
+  const { verifiedVaultAddresses, earnVaults: earnVaultAddresses } = useEulerLabels()
   const { setEscrowAddresses } = useVaultRegistry()
 
   resetVaultsState()
@@ -267,11 +307,11 @@ const loadVaults = async () => {
 
     await Promise.all([
       (async () => {
-        await updateEarnVaults(generation)
+        await updateEarnVaults(earnVaultAddresses.value, generation)
         earnResolve()
       })(),
       (async () => {
-        await updateVaults(evkAddresses, generation)
+        await updateEVKVaults(evkAddresses, generation)
         evkResolve()
       })(),
       updateSecuritizeVaults(securitizeAddresses, generation),
@@ -296,9 +336,24 @@ const loadVaults = async () => {
 
     // Set loading flags AFTER all needed escrow vaults are loaded
     isEarnUpdating.value = false
+    isSecuritizeUpdating.value = false
+    isSecuritizeLoading.value = false
     isEscrowUpdating.value = false
     isEscrowLoading.value = false
     isEscrowLoadedOnce.value = true
+  }
+  catch (e) {
+    logWarn('useVaults/loadVaults', e)
+    if (loadGeneration.value === generation) {
+      isEVKLoading.value = false
+      isEVKUpdating.value = false
+      isEarnLoading.value = false
+      isEarnUpdating.value = false
+      isSecuritizeLoading.value = false
+      isSecuritizeUpdating.value = false
+      isEscrowLoading.value = false
+      isEscrowUpdating.value = false
+    }
   }
   finally {
     if (loadGeneration.value === generation && chainId.value === startChainId) {
@@ -380,11 +435,17 @@ const getEarnVault = async (address: string): Promise<EarnVault> => {
   registrySet(normalizedAddress, vault, 'earn')
   return vault
 }
-const updateVault = async (vaultAddress: string): Promise<Vault> => {
-  const { set: registrySet, isKnownEscrowAddress } = useVaultRegistry()
+const updateVault = async (vaultAddress: string): Promise<Vault | SecuritizeVault> => {
+  const { set: registrySet, isKnownEscrowAddress, getType } = useVaultRegistry()
   const address = getAddress(vaultAddress)
 
-  // Use appropriate fetch function to preserve escrow status
+  // Use appropriate fetch function based on vault type
+  if (getType(address) === 'securitize') {
+    const vault = await fetchSecuritizeVault(address)
+    registrySet(address, vault, 'securitize')
+    return vault
+  }
+
   const vault = isKnownEscrowAddress(address)
     ? await fetchEscrowVault(address)
     : await fetchVault(address)
@@ -392,6 +453,23 @@ const updateVault = async (vaultAddress: string): Promise<Vault> => {
   registrySet(address, vault, 'evk')
   return vault
 }
+/**
+ * Silent vault data refresh — updates registry in-place without resetting loading flags.
+ * Used for periodic polling to keep interest rates, supply/borrow totals, and prices fresh.
+ */
+const refreshVaults = async () => {
+  const { getEvkVaults, getEarnVaults, getSecuritizeVaults } = useVaultRegistry()
+  const gen = loadGeneration.value
+
+  await updateEVKVaults(getEvkVaults().map(v => v.address), gen, true)
+  if (loadGeneration.value !== gen) return
+
+  await updateEarnVaults(getEarnVaults().map(v => v.address), gen, true)
+  if (loadGeneration.value !== gen) return
+
+  await updateSecuritizeVaults(getSecuritizeVaults().map(v => v.address), gen, true)
+}
+
 const updateEarnVault = async (vaultAddress: string): Promise<EarnVault> => {
   const { set: registrySet } = useVaultRegistry()
   const address = getAddress(vaultAddress)
@@ -578,14 +656,29 @@ export const useVaults = () => {
     }
 
     // Check if governorAdmin matches any address in any of the declared entities
-    for (const entityKey of declaredEntityKeys) {
+    const governorAdminVerified = declaredEntityKeys.some((entityKey) => {
       const entity = entities[entityKey]
-      if (entity && Object.keys(entity.addresses).includes(vault.governorAdmin)) {
-        return true
+      return entity && Object.keys(entity.addresses).includes(vault.governorAdmin)
+    })
+
+    if (!governorAdminVerified) {
+      return false
+    }
+
+    // Also verify oracle router governor if the oracle is an EulerRouter
+    const routerGovernor = getEulerRouterGovernor(vault.oracleDetailedInfo)
+    if (routerGovernor && routerGovernor !== zeroAddress) {
+      const routerGovernorVerified = declaredEntityKeys.some((entityKey) => {
+        const entity = entities[entityKey]
+        return entity && Object.keys(entity.addresses).includes(routerGovernor)
+      })
+
+      if (!routerGovernorVerified) {
+        return false
       }
     }
 
-    return false
+    return true
   }
 
   // Check if earn vault's on-chain owner matches any of the product's declared entities
@@ -617,10 +710,12 @@ export const useVaults = () => {
     // State
     isReady,
     loadedChainId,
-    isLoading,
-    isUpdating,
+    isEVKLoading,
+    isEVKUpdating,
     isEarnLoading,
     isEarnUpdating,
+    isSecuritizeLoading,
+    isSecuritizeUpdating,
     isEscrowLoading,
     isEscrowUpdating,
     isEscrowLoadedOnce,
@@ -640,9 +735,10 @@ export const useVaults = () => {
     updateVault,
     updateEarnVault,
     updateEscrowVault,
+    refreshVaults,
 
     // Bulk updates (internal use)
-    updateVaults,
+    updateEVKVaults,
     updateEarnVaults,
 
     // Verification

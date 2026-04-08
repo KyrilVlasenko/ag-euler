@@ -199,6 +199,11 @@ export const useWagmi = () => {
       return
     }
 
+    // Re-selecting the active chain should be a no-op.
+    if (targetChainId === currentChainId.value) {
+      return
+    }
+
     try {
       isChangingChain = true
       localStorage.setItem('chainId', String(targetChainId))

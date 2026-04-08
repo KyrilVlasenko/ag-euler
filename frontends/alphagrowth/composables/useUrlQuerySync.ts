@@ -13,6 +13,14 @@ export function useUrlQuerySync(params: UrlSyncParam[]): void {
 
   const managedKeys = new Set(params.map(p => p.queryKey))
   let isSyncing = false
+  const isActive = ref(true)
+
+  onActivated(() => {
+    isActive.value = true
+  })
+  onDeactivated(() => {
+    isActive.value = false
+  })
 
   // Read URL → refs on init
   for (const param of params) {
@@ -54,7 +62,7 @@ export function useUrlQuerySync(params: UrlSyncParam[]): void {
   }
 
   const syncRefsToUrl = async () => {
-    if (isSyncing) return
+    if (isSyncing || !isActive.value) return
     isSyncing = true
     try {
       await router.replace({ query: buildQuery() })
@@ -70,7 +78,7 @@ export function useUrlQuerySync(params: UrlSyncParam[]): void {
   watch(
     params.map(p => p.ref),
     () => {
-      if (isSyncing) return
+      if (isSyncing || !isActive.value) return
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(syncRefsToUrl, 50)
     },
@@ -82,7 +90,7 @@ export function useUrlQuerySync(params: UrlSyncParam[]): void {
   watch(
     () => route.query,
     () => {
-      if (isSyncing) return
+      if (isSyncing || !isActive.value) return
 
       // Cancel any pending debounced sync — the route just changed externally,
       // so a stale debounced sync could overwrite non-managed params (e.g. network)

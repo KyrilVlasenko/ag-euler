@@ -1,11 +1,10 @@
 import { isAddress, type Address } from 'viem'
 import { erc20SymbolAbi, erc20DecimalsAbi, erc20NameAbi } from '~/abis/erc20'
-import { getPublicClient } from '~/utils/public-client'
 import type { VaultAsset } from '~/entities/vault'
 import { createRaceGuard } from '~/utils/race-guard'
 
 export const useCustomTokenResolver = () => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient } = useRpcClient()
   const { fetchSingleBalance } = useWallets()
 
   const customToken = ref<VaultAsset | null>(null)
@@ -24,21 +23,20 @@ export const useCustomTokenResolver = () => {
     isLoading.value = true
 
     const address = input as Address
-    const client = getPublicClient(EVM_PROVIDER_URL)
 
     try {
       const [symbolResult, decimalsResult, nameResult, balance] = await Promise.all([
-        client.readContract({
+        rpcClient.value!.readContract({
           address,
           abi: erc20SymbolAbi,
           functionName: 'symbol',
         }).catch(() => null),
-        client.readContract({
+        rpcClient.value!.readContract({
           address,
           abi: erc20DecimalsAbi,
           functionName: 'decimals',
         }).catch(() => null),
-        client.readContract({
+        rpcClient.value!.readContract({
           address,
           abi: erc20NameAbi,
           functionName: 'name',

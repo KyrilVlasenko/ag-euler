@@ -4,8 +4,11 @@ import type { OperationsContext, AllowanceHelpers } from './types'
 import type { TxPlan } from '~/entities/txPlan'
 import { catchToFallback } from '~/utils/errorHandling'
 import { isNonBlockingSimulationError } from '~/utils/tx-errors'
+import { applyOperationGuards } from '~/utils/operationGuardRegistry'
 
 export const createExecutionHelpers = (ctx: OperationsContext, allowanceHelpers: AllowanceHelpers) => {
+  const { triggerPortfolioRefresh } = usePortfolioRefresh()
+
   const waitForTxReceipt = async (txHash?: Hash) => {
     if (!txHash) {
       return
@@ -18,13 +21,20 @@ export const createExecutionHelpers = (ctx: OperationsContext, allowanceHelpers:
   }
 
   const executeTxPlan = async (plan: TxPlan) => {
+    const { isSpyMode } = useSpyMode()
+    if (isSpyMode.value) {
+      throw new Error('Transactions are disabled in spy mode')
+    }
+
     if (!ctx.address.value) {
       throw new Error('Wallet not connected')
     }
 
+    const guardedPlan = applyOperationGuards(plan)
     let lastHash: Hex | undefined
 
-    for (const step of plan.steps) {
+    for (const step of guardedPlan.steps) {
+      /* eslint-disable @typescript-eslint/no-explicit-any -- wagmi writeContractAsync requires ABI-specific generics */
       const txHash = await ctx.writeContractAsync({
         address: step.to,
         abi: step.abi,
@@ -32,11 +42,13 @@ export const createExecutionHelpers = (ctx: OperationsContext, allowanceHelpers:
         args: step.args as any,
         value: step.value ?? 0n,
       })
+      /* eslint-enable @typescript-eslint/no-explicit-any */
 
       lastHash = txHash
       await waitForTxReceipt(txHash)
     }
 
+    triggerPortfolioRefresh()
     return lastHash
   }
 
@@ -45,13 +57,15 @@ export const createExecutionHelpers = (ctx: OperationsContext, allowanceHelpers:
       throw new Error('Wallet not connected')
     }
 
-    const hasApprovalSteps = plan.steps.some(step => step.type === 'approve' || step.type === 'permit2-approve')
-    const usesPermit2 = plan.steps.some(step => step.type === 'permit2-approve' || (step.label && step.label.includes('Permit2')))
-    const stepsToSimulate = plan.steps.filter(step => step.type !== 'approve' && step.type !== 'permit2-approve')
+    const guardedPlan = applyOperationGuards(plan)
+
+    const hasApprovalSteps = guardedPlan.steps.some(step => step.type === 'approve' || step.type === 'permit2-approve')
+    const usesPermit2 = guardedPlan.steps.some(step => step.type === 'permit2-approve' || (step.label && step.label.includes('Permit2')))
+    const stepsToSimulate = guardedPlan.steps.filter(step => step.type !== 'approve' && step.type !== 'permit2-approve')
 
     const stateOverride = await catchToFallback(
       async () => {
-        const overrides = await allowanceHelpers.buildSimulationStateOverride(plan, ctx.address.value as Address)
+        const overrides = await allowanceHelpers.buildSimulationStateOverride(guardedPlan, ctx.address.value as Address)
         return overrides.length ? overrides as StateOverride : undefined
       },
       undefined,
@@ -60,6 +74,7 @@ export const createExecutionHelpers = (ctx: OperationsContext, allowanceHelpers:
 
     for (const step of stepsToSimulate) {
       try {
+        /* eslint-disable @typescript-eslint/no-explicit-any -- wagmi simulateContract requires ABI-specific generics */
         await simulateContract(ctx.config, {
           account: ctx.address.value as Address,
           address: step.to,
@@ -69,6 +84,7 @@ export const createExecutionHelpers = (ctx: OperationsContext, allowanceHelpers:
           value: step.value ?? 0n,
           stateOverride,
         })
+        /* eslint-enable @typescript-eslint/no-explicit-any */
       }
       catch (err) {
         const isNonBlocking = (hasApprovalSteps || usesPermit2) && isNonBlockingSimulationError(err)

@@ -55,9 +55,10 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
     }
     const current = Math.min(providersFetchedCount.value, providersCount.value)
     const total = providersCount.value
+    const progress = Math.round((current / total) * 100)
     return current < total
-      ? `Fetching quotes ${current}/${total}`
-      : `Quotes returned ${current}/${total}`
+      ? `Fetching quotes ${progress}%`
+      : 'Quotes fetched'
   })
 
   const getQuoteDiffPctFor = (quote: SwapApiQuote) => {
@@ -86,52 +87,6 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
     quoteCards.value = sortQuoteCards(next, options.amountField, options.compare)
     if (isLoading.value && next.length > 0) {
       isLoading.value = false
-    }
-  }
-
-  const requestCustomQuote = async (
-    provider: string,
-    fetchQuote: (signal: AbortSignal) => Promise<SwapApiQuote>,
-    requestOptions: SwapQuotesRequestOptions = {},
-  ) => {
-    quoteError.value = null
-    if (quoteAbort) {
-      quoteAbort.abort()
-    }
-    const controller = new AbortController()
-    quoteAbort = controller
-    const gen = guard.next()
-
-    isLoading.value = true
-    quoteCards.value = []
-    selectedProvider.value = null
-    providersCount.value = 1
-    providersFetchedCount.value = 0
-
-    try {
-      const quote = await fetchQuote(controller.signal)
-      if (guard.isStale(gen)) return
-      upsertQuote(provider, quote)
-    }
-    catch (err) {
-      if (isAbortError(err)) return
-      if (requestOptions.logContext) {
-        logSwapFailure({
-          reason: (err as { message?: string })?.message || 'Unknown error',
-          provider,
-          ...requestOptions.logContext,
-        })
-      }
-      quoteError.value = requestOptions.errorMessage || 'Unable to fetch swap quote'
-    }
-    finally {
-      if (!guard.isStale(gen)) {
-        providersFetchedCount.value = 1
-        isLoading.value = false
-        if (!quoteCards.value.length && !quoteError.value) {
-          quoteError.value = requestOptions.errorMessage || 'Unable to fetch swap quote'
-        }
-      }
     }
   }
 
@@ -166,6 +121,8 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
         return
       }
 
+      let rateLimitedCount = 0
+
       const fetchProviderQuote = async (provider: string) => {
         try {
           const data = await getSwapQuotes({
@@ -186,10 +143,13 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
           if (isAbortError(err)) {
             return
           }
+          const axiosErr = err as { response?: { status?: number }, message?: string }
+          if (axiosErr.response?.status === 429) {
+            rateLimitedCount += 1
+          }
           if (requestOptions.logContext) {
-            const error = err as { message?: string }
             logSwapFailure({
-              reason: error?.message || 'Unknown error',
+              reason: axiosErr.message || 'Unknown error',
               provider,
               ...requestOptions.logContext,
             })
@@ -201,7 +161,9 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
             if (providersFetchedCount.value >= providersCount.value) {
               isLoading.value = false
               if (!quoteCards.value.length) {
-                quoteError.value = requestOptions.errorMessage || 'Unable to fetch swap quote'
+                quoteError.value = rateLimitedCount >= providersCount.value
+                  ? 'Rate limited. Please wait a moment and try again.'
+                  : (requestOptions.errorMessage || 'Unable to fetch a swap quote. Please adjust the amount or select a different asset to try again.')
               }
             }
           }
@@ -216,7 +178,10 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
       if (isAbortError(err)) {
         return
       }
-      quoteError.value = requestOptions.errorMessage || 'Unable to fetch swap quote'
+      const axiosErr = err as { response?: { status?: number } }
+      quoteError.value = axiosErr.response?.status === 429
+        ? 'Rate limited. Please wait a moment and try again.'
+        : (requestOptions.errorMessage || 'Unable to fetch a swap quote. Please adjust the amount or select a different asset to try again.')
       quoteCards.value = []
     }
     finally {
@@ -260,8 +225,8 @@ export const useSwapQuotesParallel = (options: SwapQuotesParallelOptions) => {
     statusLabel,
     getQuoteDiffPct: getQuoteDiffPctFor,
     reset,
+    upsertQuote,
     requestQuotes,
-    requestCustomQuote,
     selectProvider,
   }
 }

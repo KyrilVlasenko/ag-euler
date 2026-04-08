@@ -113,6 +113,13 @@ export class FixedPoint {
     return this.round(decimals)
   }
 
+  toScaledBigint(targetDecimals: number): bigint {
+    if (this.decimals >= targetDecimals) {
+      return this.value / (10n ** BigInt(this.decimals - targetDecimals))
+    }
+    return this.value * (10n ** BigInt(targetDecimals - this.decimals))
+  }
+
   toUnsafeFloat(): number {
     if (this.decimals === 0) {
       return Number(this.value)

@@ -15,8 +15,18 @@ interface RateLimiterConfig {
   label: string
 }
 
-// NOTE: In-memory rate limiting is per-process. If Nitro runs multiple
-// workers the effective limit is multiplied by the worker count.
+// NOTE: This rate limiter is a best-effort defense-in-depth measure, not a
+// security boundary. Known limitations:
+//
+// - In-memory state is per-process. If Nitro runs multiple workers the
+//   effective limit is multiplied by the worker count.
+// - Without Cloudflare (or another trusted reverse proxy), the X-Forwarded-For
+//   fallback is client-controlled and trivially spoofable. Attackers can bypass
+//   the limit by varying the header value on each request.
+//
+// For production deployments, run the app behind a reverse proxy (Cloudflare,
+// Nginx, etc.) that performs its own rate limiting and sets a trusted client IP
+// header. See docs/architecture.md for deployment recommendations.
 
 /**
  * Extract the client IP from an H3 event.

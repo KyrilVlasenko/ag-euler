@@ -10,7 +10,7 @@ export function safeAssign<T extends Record<string, unknown>>(
 ): T {
   for (const key of Object.keys(source)) {
     if (!DANGEROUS_KEYS.has(key)) {
-      (target as any)[key] = (source as any)[key]
+      (target as Record<string, unknown>)[key] = (source as Record<string, unknown>)[key]
     }
   }
   return target

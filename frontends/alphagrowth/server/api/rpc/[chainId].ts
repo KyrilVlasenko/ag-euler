@@ -26,7 +26,7 @@ const MAX_BATCH_SIZE = 100
 const UPSTREAM_TIMEOUT_MS = 30_000
 
 const rateLimiter = createRateLimiter({
-  max: 2000,
+  max: 10_000,
   windowMs: 60_000,
   label: 'rpc',
 })
@@ -98,8 +98,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const cost = isBatch ? body.length : 1
-  rateLimiter.consume(event, cost)
+  rateLimiter.consume(event)
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)

@@ -3,18 +3,16 @@ import { logWarn } from '~/utils/errorHandling'
 import { SECONDS_IN_YEAR, TARGET_TIME_AGO } from '~/entities/constants'
 import { eulerUtilsLensABI } from '~/entities/euler/abis'
 import { vaultConvertToAssetsAbi } from '~/abis/vault'
-import { getPublicClient } from '~/utils/public-client'
 
 export const computeAPYs = (borrowSPY: bigint, cash: bigint, borrows: bigint, interestFee: bigint) => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
+  const { client: rpcClient } = useRpcClient()
   const { eulerLensAddresses } = useEulerAddresses()
 
   if (!eulerLensAddresses.value?.utilsLens) {
     throw new Error('Euler addresses not loaded yet')
   }
 
-  const client = getPublicClient(EVM_PROVIDER_URL)
-  return client.readContract({
+  return rpcClient.value!.readContract({
     address: eulerLensAddresses.value.utilsLens as Address,
     abi: eulerUtilsLensABI,
     functionName: 'computeAPYs',
@@ -28,13 +26,16 @@ export const getNetAPY = (
   borrowAPY: number,
   supplyRewardAPY?: number | null,
   borrowRewardAPY?: number | null,
+  loopingRewardAPY?: number | null,
 ) => {
   if (supplyUSD === 0) {
     return 0
   }
+  const equity = supplyUSD - borrowUSD
   const sum
     = supplyUSD * (supplyAPY + (supplyRewardAPY || 0))
       - borrowUSD * (borrowAPY - (borrowRewardAPY || 0))
+      + equity * (loopingRewardAPY || 0)
   return sum / supplyUSD
 }
 export const getRoe = (
@@ -44,12 +45,14 @@ export const getRoe = (
   borrowAPY: number,
   supplyRewardAPY?: number | null,
   borrowRewardAPY?: number | null,
+  loopingRewardAPY?: number | null,
 ) => {
   const equity = supplyUSD - borrowUSD
   if (equity <= 0) return 0
   const netYield
     = supplyUSD * (supplyAPY + (supplyRewardAPY || 0))
       - borrowUSD * (borrowAPY - (borrowRewardAPY || 0))
+      + equity * (loopingRewardAPY || 0)
   return netYield / equity
 }
 
@@ -62,9 +65,10 @@ interface BlockDataCache {
 }
 
 // Pre-fetch block data once for all APY calculations
-export const fetchBlockDataForAPY = async (rpcUrl: string): Promise<BlockDataCache | null> => {
+export const fetchBlockDataForAPY = async (): Promise<BlockDataCache | null> => {
   try {
-    const client = getPublicClient(rpcUrl)
+    const { client: rpcClient } = useRpcClient()
+    const client = rpcClient.value!
     const currentBlockBigInt = await client.getBlockNumber()
     const currentBlock = Number(currentBlockBigInt)
     const sampleDistance = 100
@@ -125,12 +129,12 @@ export const fetchBlockDataForAPY = async (rpcUrl: string): Promise<BlockDataCac
 // Calculate APY using cached block data (only 2 RPC calls per vault instead of 6)
 export const calculateEarnVaultAPYWithCache = async (
   vaultAddress: string,
-  rpcUrl: string,
   decimals: bigint,
   blockCache: BlockDataCache,
 ): Promise<number> => {
   try {
-    const client = getPublicClient(rpcUrl)
+    const { client: rpcClient } = useRpcClient()
+    const client = rpcClient.value!
 
     const oneShare = parseUnits('1', Number(decimals))
 
@@ -174,12 +178,11 @@ export const calculateEarnVaultAPYWithCache = async (
 // Legacy function for single vault fetch (kept for backward compatibility)
 export const calculateEarnVaultAPYFromExchangeRate = async (
   vaultAddress: string,
-  rpcUrl: string,
   decimals: bigint,
 ): Promise<number> => {
-  const blockCache = await fetchBlockDataForAPY(rpcUrl)
+  const blockCache = await fetchBlockDataForAPY()
   if (!blockCache) {
     return 0
   }
-  return calculateEarnVaultAPYWithCache(vaultAddress, rpcUrl, decimals, blockCache)
+  return calculateEarnVaultAPYWithCache(vaultAddress, decimals, blockCache)
 }

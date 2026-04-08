@@ -7,6 +7,8 @@ import { useEulerProductOfVault, useEulerEntitiesOfVault } from '~/composables/u
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { formatNumber, formatCompactUsdValue } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
+import { useModal } from '~/components/ui/composables/useModal'
+import { VaultSupplyApyModal } from '#components'
 import BaseLoadableContent from '~/components/base/BaseLoadableContent.vue'
 
 const { isConnected } = useAccount()
@@ -21,6 +23,7 @@ const entities = useEulerEntitiesOfVault(vault as unknown as Vault)
 
 const isUnverified = computed(() => !vault.verified)
 const isGovernorVerified = computed(() => isVaultGovernorVerified(vault as unknown as Vault))
+const isGovernanceLimited = computed(() => product.isGovernanceLimited && isGovernorVerified.value)
 const entityName = computed(() => {
   if (!isGovernorVerified.value || entities.length === 0) return ''
   if (entities.length === 1) return entities[0].name
@@ -35,8 +38,9 @@ const displayName = computed(() => product.name || vault.name)
 const isGeoBlocked = computed(() => isVaultBlockedByCountry(vault.address))
 
 const { getBalance, isLoading: isBalancesLoading } = useWallets()
-const { withIntrinsicSupplyApy } = useIntrinsicApy()
-const { getSupplyRewardApy, hasSupplyRewards } = useRewardsApy()
+const modal = useModal()
+const { withIntrinsicSupplyApy, getIntrinsicApy, getIntrinsicApyInfo } = useIntrinsicApy()
+const { getSupplyRewardApy, hasSupplyRewards, getSupplyRewardCampaigns } = useRewardsApy()
 
 const balance = computed(() =>
   getBalance(vault.asset.address as `0x${string}`),
@@ -52,6 +56,27 @@ const supplyApy = computed(() =>
 const supplyApyWithRewards = computed(
   () => supplyApy.value + totalRewardsAPY.value,
 )
+
+const onSupplyInfoIconClick = (event: MouseEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+  modal.open(VaultSupplyApyModal, {
+    props: {
+      lendingAPY: lendingAPY.value,
+      intrinsicAPY: getIntrinsicApy(vault.asset.address),
+      intrinsicApyInfo: getIntrinsicApyInfo(vault.asset.address),
+      campaigns: getSupplyRewardCampaigns(vault.address),
+    },
+  })
+}
+
+const statsGridCols = computed(() => {
+  const cols: string[] = []
+  if (enableEntityBranding) cols.push('1fr')
+  cols.push('1fr') // Total supply
+  if (isConnected.value) cols.push('1fr') // In wallet
+  return cols.join(' ')
+})
 
 const prices = ref<{ totalSupply: string, walletBalance: string }>({
   totalSupply: '-',
@@ -75,7 +100,7 @@ watchEffect(async () => {
   <NuxtLink
     class="block no-underline text-content-primary bg-surface rounded-12 border border-line-default shadow-card hover:shadow-card-hover hover:border-line-emphasis transition-all"
     :class="isGeoBlocked ? 'opacity-50' : ''"
-    :to="`/lend/${vault.address}`"
+    :to="{ path: `/lend/${vault.address}`, query: { network: $route.query.network } }"
   >
     <div class="flex pb-12 p-16 border-b border-line-subtle">
       <AssetAvatar
@@ -105,8 +130,13 @@ watchEffect(async () => {
         </div>
       </div>
       <div class="flex flex-col items-end">
-        <div class="text-content-tertiary text-p3 mb-4 text-right">
+        <div class="text-content-tertiary text-p3 mb-4 text-right flex items-center gap-4">
           Supply APY
+          <SvgIcon
+            class="!w-16 !h-16 text-content-muted hover:text-content-secondary transition-colors cursor-pointer"
+            name="info-circle"
+            @click="onSupplyInfoIconClick"
+          />
         </div>
         <div class="flex items-center">
           <div class="text-p2 flex items-center text-accent-600 font-semibold">
@@ -121,16 +151,28 @@ watchEffect(async () => {
       </div>
     </div>
     <div
-      class="flex-1 flex py-12 px-16 pb-12 justify-between mobile:border-b mobile:border-line-subtle"
+      class="grid gap-x-16 py-12 px-16 pb-12 mobile:!flex mobile:justify-between mobile:border-b mobile:border-line-subtle"
+      :style="{ gridTemplateColumns: statsGridCols }"
     >
       <div
         v-if="enableEntityBranding"
-        class="flex-1 mr-16"
+        class="flex-1"
       >
         <div class="text-content-tertiary text-p3 mb-4">Risk manager</div>
         <div
-          v-if="entityName"
+          v-if="!isGovernorVerified"
+          class="flex gap-8 items-center py-4 px-8 rounded-8 bg-error-100 text-error-500 text-p2 w-fit"
+        >
+          <SvgIcon
+            name="warning"
+            class="!w-16 !h-16"
+          />
+          Unknown
+        </div>
+        <div
+          v-else-if="entityName"
           class="flex items-center gap-6"
+          :class="{ 'opacity-20': isGovernanceLimited }"
         >
           <BaseAvatar
             class="icon--20"
@@ -144,7 +186,7 @@ watchEffect(async () => {
           class="text-p2 text-content-primary"
         >-</div>
       </div>
-      <div class="flex-1">
+      <div class="flex-1 flex flex-col items-center mobile:items-start">
         <div class="text-content-tertiary text-p3 mb-4">
           Total supply
         </div>
@@ -176,14 +218,28 @@ watchEffect(async () => {
           <div class="text-content-tertiary text-p3">Risk manager</div>
         </div>
         <div class="flex gap-8 justify-end items-center text-right flex-1">
-          <template v-if="entityName">
+          <div
+            v-if="!isGovernorVerified"
+            class="flex gap-8 items-center py-4 px-8 rounded-8 bg-error-100 text-error-500 text-p2 w-fit"
+          >
+            <SvgIcon
+              name="warning"
+              class="!w-16 !h-16"
+            />
+            Unknown
+          </div>
+          <div
+            v-else-if="entityName"
+            class="flex items-center gap-8"
+            :class="{ 'opacity-20': isGovernanceLimited }"
+          >
             <BaseAvatar
               class="icon--20"
               :label="entityName"
               :src="entityLogos"
             />
             <span class="text-p2 text-content-primary truncate">{{ entityName }}</span>
-          </template>
+          </div>
           <div
             v-else
             class="text-p2 text-content-primary"

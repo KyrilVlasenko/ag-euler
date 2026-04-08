@@ -22,8 +22,9 @@ const getDefaultRoute = () => {
 }
 
 const scheduleVaultCheck = (vaultParam: string, path: string, expectedChainId: number | null) => {
+  const router = useRouter()
+
   setTimeout(async () => {
-    const route = useRoute()
     const { info } = useToast()
     const { getVault, getSecuritizeVault, isSecuritizeVault } = useVaults()
     const { chainId } = useEulerAddresses()
@@ -31,6 +32,8 @@ const scheduleVaultCheck = (vaultParam: string, path: string, expectedChainId: n
     if (path.includes('earn')) {
       return
     }
+
+    const route = router.currentRoute.value
 
     const currentVault = normalizeParam(route.params?.vault)
     if (!currentVault || String(currentVault) !== vaultParam) {
@@ -55,7 +58,9 @@ const scheduleVaultCheck = (vaultParam: string, path: string, expectedChainId: n
       }
     }
     catch {
-      if (route.path !== path) {
+      const latestRoute = router.currentRoute.value
+
+      if (latestRoute.path !== path) {
         return
       }
 
@@ -66,8 +71,8 @@ const scheduleVaultCheck = (vaultParam: string, path: string, expectedChainId: n
       info('This vault could not be found on this chain!')
       void navigateTo({
         name: getDefaultRoute(),
-        query: { ...route.query },
-        hash: route.hash,
+        query: { ...latestRoute.query },
+        hash: latestRoute.hash,
       }, { replace: true })
     }
   }, 0)

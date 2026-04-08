@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { MarketGroup, MiniDiagramData } from '~/entities/lend-discovery'
-import { getAssetLogoUrl } from '~/composables/useTokens'
-import { isVaultDeprecated } from '~/utils/eulerLabelsUtils'
+import { getAssetLogoUrl } from '~/composables/useTokenList'
+import { isVaultDeprecated, isVaultKeyring } from '~/utils/eulerLabelsUtils'
 import { stringToColor } from '~/utils/string-utils'
 import {
   getEnlargedDiagram,
@@ -24,12 +24,20 @@ defineEmits<{
 
 const isGraphNodeHighlighted = (address: string): boolean => {
   if (!props.selectedNodeAddress) return true
-  return address === props.selectedNodeAddress || getGraphConnectedAddresses(props.diagram, props.selectedNodeAddress).has(address)
+  return (
+    address === props.selectedNodeAddress
+    || getGraphConnectedAddresses(props.diagram, props.selectedNodeAddress).has(
+      address,
+    )
+  )
 }
 
 const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
   if (!props.selectedNodeAddress) return true
-  return fromAddr === props.selectedNodeAddress || toAddr === props.selectedNodeAddress
+  return (
+    fromAddr === props.selectedNodeAddress
+    || toAddr === props.selectedNodeAddress
+  )
 }
 </script>
 
@@ -51,19 +59,48 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
           :key="`edge-${idx}`"
         >
           <!-- Highlighted + selected: show directed arrows in accent color -->
-          <template v-if="selectedNodeAddress && isGraphEdgeHighlighted(edge.from.address, edge.to.address)">
+          <template
+            v-if="
+              selectedNodeAddress
+                && isGraphEdgeHighlighted(edge.from.address, edge.to.address)
+            "
+          >
             <line
               :x1="edge.from.x"
               :y1="edge.from.y"
-              :x2="getArrow(edge.from.x, edge.from.y, edge.to.x, edge.to.y, enlarged.nodeRadius).lineX2"
-              :y2="getArrow(edge.from.x, edge.from.y, edge.to.x, edge.to.y, enlarged.nodeRadius).lineY2"
+              :x2="
+                getArrow(
+                  edge.from.x,
+                  edge.from.y,
+                  edge.to.x,
+                  edge.to.y,
+                  enlarged.nodeRadius,
+                ).lineX2
+              "
+              :y2="
+                getArrow(
+                  edge.from.x,
+                  edge.from.y,
+                  edge.to.x,
+                  edge.to.y,
+                  enlarged.nodeRadius,
+                ).lineY2
+              "
               style="stroke: var(--accent-500)"
               :stroke-width="0.8"
               stroke-linecap="round"
               opacity="0.9"
             />
             <polygon
-              :points="getArrow(edge.from.x, edge.from.y, edge.to.x, edge.to.y, enlarged.nodeRadius).triangle"
+              :points="
+                getArrow(
+                  edge.from.x,
+                  edge.from.y,
+                  edge.to.x,
+                  edge.to.y,
+                  enlarged.nodeRadius,
+                ).triangle
+              "
               style="fill: var(--accent-500)"
               opacity="0.9"
             />
@@ -71,15 +108,39 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
               <line
                 :x1="edge.to.x"
                 :y1="edge.to.y"
-                :x2="getArrow(edge.to.x, edge.to.y, edge.from.x, edge.from.y, enlarged.nodeRadius).lineX2"
-                :y2="getArrow(edge.to.x, edge.to.y, edge.from.x, edge.from.y, enlarged.nodeRadius).lineY2"
+                :x2="
+                  getArrow(
+                    edge.to.x,
+                    edge.to.y,
+                    edge.from.x,
+                    edge.from.y,
+                    enlarged.nodeRadius,
+                  ).lineX2
+                "
+                :y2="
+                  getArrow(
+                    edge.to.x,
+                    edge.to.y,
+                    edge.from.x,
+                    edge.from.y,
+                    enlarged.nodeRadius,
+                  ).lineY2
+                "
                 style="stroke: var(--accent-500)"
                 :stroke-width="0.8"
                 stroke-linecap="round"
                 opacity="0.9"
               />
               <polygon
-                :points="getArrow(edge.to.x, edge.to.y, edge.from.x, edge.from.y, enlarged.nodeRadius).triangle"
+                :points="
+                  getArrow(
+                    edge.to.x,
+                    edge.to.y,
+                    edge.from.x,
+                    edge.from.y,
+                    enlarged.nodeRadius,
+                  ).triangle
+                "
                 style="fill: var(--accent-500)"
                 opacity="0.9"
               />
@@ -92,11 +153,13 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
             :y1="edge.from.y"
             :x2="edge.to.x"
             :y2="edge.to.y"
-            :stroke="edge.mutual ? '#9ca3af' : '#6b7280'"
+            :style="{
+              stroke: edge.mutual ? 'var(--graph-edge-mutual)' : 'var(--graph-edge)',
+              transition: 'opacity 0.2s, stroke 0.2s',
+            }"
             :stroke-width="edge.mutual ? 1.0 : 0.5"
             stroke-linecap="round"
-            :opacity="selectedNodeAddress ? 0.15 : (edge.mutual ? 0.9 : 0.5)"
-            style="transition: opacity 0.2s, stroke 0.2s"
+            :opacity="selectedNodeAddress ? 0.15 : edge.mutual ? 0.9 : 0.5"
           />
         </template>
 
@@ -120,8 +183,7 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
             :cx="node.x"
             :cy="node.y"
             r="12"
-            :fill="getAssetLogoUrl(node.assetAddress, node.assetSymbol) ? '#1f2937' : stringToColor(node.assetSymbol)"
-            stroke="#4b5563"
+            :style="{ fill: getAssetLogoUrl(node.assetAddress, node.assetSymbol) ? 'var(--graph-node-bg)' : stringToColor(node.assetSymbol), stroke: 'var(--graph-node-border)' }"
             stroke-width="1"
           />
           <image
@@ -138,10 +200,12 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
             :x="node.x"
             :y="node.y + 4"
             text-anchor="middle"
-            fill="white"
+            style="fill: var(--graph-node-text)"
             font-size="10"
             font-weight="600"
-          >{{ node.assetSymbol.slice(0, 2) }}</text>
+          >
+            {{ node.assetSymbol.slice(0, 2) }}
+          </text>
           <!-- Deprecated badge -->
           <g v-if="isVaultDeprecated(node.address)">
             <circle
@@ -157,7 +221,9 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
               fill="white"
               font-size="9"
               font-weight="700"
-            >!</text>
+            >
+              !
+            </text>
           </g>
           <!-- Ramping down badge -->
           <g v-else-if="isNodeRampingDown(market, node.address)">
@@ -176,13 +242,33 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
               stroke-linejoin="round"
             />
           </g>
+          <!-- Keyring (private vault) badge -->
+          <g v-else-if="isVaultKeyring(node.address)">
+            <circle
+              :cx="node.x + 9"
+              :cy="node.y - 9"
+              r="6"
+              style="fill: var(--accent-600)"
+            />
+            <!-- Shield icon -->
+            <path
+              :d="`M${node.x + 9} ${node.y - 12.5} l-2.5 1 v2.2 c0 1.5 1 2.5 2.5 3 c1.5 -0.5 2.5 -1.5 2.5 -3 v-2.2 z`"
+              fill="white"
+            />
+          </g>
           <!-- Asset label -->
           <text
             :x="getLabelPosition(node, enlarged.cx, enlarged.cy).x"
             :y="getLabelPosition(node, enlarged.cx, enlarged.cy).y"
-            :text-anchor="getLabelPosition(node, enlarged.cx, enlarged.cy).anchor"
+            :text-anchor="
+              getLabelPosition(node, enlarged.cx, enlarged.cy).anchor
+            "
             class="fill-current"
-            :class="isExternalCollateral(market, node.address) ? 'text-content-tertiary' : 'text-content-primary'"
+            :class="
+              isExternalCollateral(market, node.address)
+                ? 'text-content-tertiary'
+                : 'text-content-primary'
+            "
             font-size="12"
             font-weight="500"
           >
@@ -198,8 +284,12 @@ const isGraphEdgeHighlighted = (fromAddr: string, toAddr: string): boolean => {
       <span>{{ diagram.pairCount }} pairs</span>
     </div>
 
-    <p class="text-p4 text-content-muted text-center leading-relaxed px-16 pb-12">
-      Tap a node to highlight connections and see lending/borrowing options below.
+    <p
+      v-if="!selectedNodeAddress"
+      class="text-h6 text-content-primary text-center leading-relaxed px-16 pb-12"
+    >
+      Tap a node to highlight connections and see lending/borrowing options
+      below.
     </p>
   </template>
 </template>

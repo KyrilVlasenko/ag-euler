@@ -3,28 +3,28 @@ import { useAccount } from '@wagmi/vue'
 import { FixedPoint } from '~/utils/fixed-point'
 import { useModal } from '~/components/ui/composables/useModal'
 import { OperationReviewModal } from '#components'
-import { useTermsOfUseGate } from '~/composables/useTermsOfUseGate'
 import { useToast } from '~/components/ui/composables/useToast'
-import { POLL_INTERVAL_5S_MS } from '~/entities/tuning-constants'
 import { type BorrowVaultPair, getNetAPY, type VaultAsset } from '~/entities/vault'
 import { getUtilisationWarning, getBorrowCapWarning } from '~/composables/useVaultWarnings'
 import { getAssetUsdValueOrZero, getAssetOraclePrice, getCollateralOraclePrice, conservativePriceRatio } from '~/services/pricing/priceProvider'
+import { getTotalCollateralValue } from '~/utils/position-estimates'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
 import { isAnyVaultBlockedByCountry, isVaultRestrictedByCountry } from '~/composables/useGeoBlock'
 import type { AccountBorrowPosition } from '~/entities/account'
 import type { TxPlan } from '~/entities/txPlan'
 import { formatNumber, formatSmartAmount, formatHealthScore, trimTrailingZeros } from '~/utils/string-utils'
+import { formatLiquidationBuffer as formatLiqBuffer } from '~/utils/repayUtils'
 import { nanoToValue } from '~/utils/crypto-utils'
+import { isOperationBlocked } from '~/utils/operationGuardRegistry'
 
 const router = useRouter()
 const _route = useRoute()
 const modal = useModal()
 const { error } = useToast()
-const { getSubmitLabel, getSubmitDisabled, guardWithTerms } = useTermsOfUseGate()
-const reviewBorrowLabel = getSubmitLabel('Review Borrow')
 const { buildBorrowPlan, executeTxPlan } = useEulerOperations()
 const { getBorrowVaultPair, updateVault } = useVaults()
 const { isConnected, address } = useAccount()
+const { isSpyMode } = useSpyMode()
 const { isPositionsLoading, isPositionsLoaded, getPositionBySubAccountIndex } = useEulerAccount()
 const positionIndex = usePositionIndex()
 const { fetchSingleBalance } = useWallets()
@@ -98,9 +98,10 @@ const isGeoBlocked = computed(() => {
 })
 const isBorrowRestricted = computed(() =>
   pair.value?.borrow ? isVaultRestrictedByCountry(pair.value.borrow.address) : false)
-const reviewBorrowDisabled = getSubmitDisabled(computed(() => isGeoBlocked.value || isBorrowRestricted.value || isSubmitDisabled.value))
+const reviewBorrowDisabled = computed(() => isGeoBlocked.value || isBorrowRestricted.value || isSubmitDisabled.value)
 const borrowVault = computed(() => pair.value?.borrow)
 const collateralVault = computed(() => pair.value?.collateral)
+useOperationGuard(computed(() => [borrowVault.value?.address, collateralVault.value?.address].filter(Boolean)))
 const borrowWarnings = computed(() => {
   if (!borrowVault.value) return []
   return [
@@ -109,6 +110,7 @@ const borrowWarnings = computed(() => {
   ]
 })
 const pairAssets = computed(() => [collateralVault.value?.asset, borrowVault.value?.asset])
+const pairAssetsLabel = usePositionPairLabel(position)
 const priceFixed = computed(() => {
   const collateralPrice = borrowVault.value && collateralVault.value
     ? getCollateralOraclePrice(borrowVault.value, collateralVault.value)
@@ -116,10 +118,7 @@ const priceFixed = computed(() => {
   const borrowPrice = borrowVault.value ? getAssetOraclePrice(borrowVault.value) : undefined
   return FixedPoint.fromValue(conservativePriceRatio(collateralPrice, borrowPrice), 18)
 })
-const collateralAmountFixed = computed(() => FixedPoint.fromValue(
-  valueToNano(collateralAmount.value || '0', collateralVault.value?.decimals),
-  Number(collateralVault.value?.decimals),
-))
+priceInvert.autoInvert(() => priceFixed.value.toUnsafeFloat())
 const borrowAmountFixed = computed(() => FixedPoint.fromValue(
   valueToNano(borrowAmount.value || '0', borrowVault.value?.decimals),
   Number(borrowVault.value?.decimals),
@@ -146,7 +145,7 @@ const borrowApy = computed(() => withIntrinsicBorrowApy(
 ))
 
 const load = async () => {
-  if (!isConnected.value) {
+  if (!isConnected.value && !isSpyMode.value) {
     position.value = undefined
     return
   }
@@ -209,52 +208,56 @@ const updateBalance = async () => {
   isBalanceLoading.value = false
 }
 const submit = async () => {
+  if (isOperationBlocked.value) return
   if (isPreparing.value || isGeoBlocked.value || isBorrowRestricted.value) return
   isPreparing.value = true
   try {
-    await guardWithTerms(async () => {
-      if (!borrowVault.value || !collateralVault.value) {
+    if (!borrowVault.value || !collateralVault.value) {
+      return
+    }
+
+    try {
+      plan.value = await buildBorrowPlan(
+        collateralVault.value.address,
+        collateralVault.value.asset.address,
+        0n,
+        borrowVault.value.address,
+        valueToNano(borrowAmount.value || '0', borrowVault.value.decimals),
+        position.value?.subAccount,
+        {
+          includePermit2Call: false,
+          enabledCollaterals: position.value?.collaterals,
+          enabledController: position.value?.borrow.address,
+          acceptedCollaterals: borrowVault.value.collateralLTVs.filter(c => c.borrowLTV > 0n).map(c => c.collateral),
+        },
+      )
+    }
+    catch (e) {
+      console.warn('[OperationReviewModal] failed to build plan', e)
+      plan.value = null
+    }
+
+    if (plan.value) {
+      const ok = await runSimulation(plan.value)
+      if (!ok) {
         return
       }
+    }
 
-      try {
-        plan.value = await buildBorrowPlan(
-          collateralVault.value.address,
-          collateralVault.value.asset.address,
-          0n,
-          borrowVault.value.address,
-          valueToNano(borrowAmount.value || '0', borrowVault.value.decimals),
-          position.value?.subAccount,
-          { includePermit2Call: false, enabledCollaterals: position.value?.collaterals },
-        )
-      }
-      catch (e) {
-        console.warn('[OperationReviewModal] failed to build plan', e)
-        plan.value = null
-      }
-
-      if (plan.value) {
-        const ok = await runSimulation(plan.value)
-        if (!ok) {
-          return
-        }
-      }
-
-      modal.open(OperationReviewModal, {
-        props: {
-          type: 'borrow',
-          asset: borrowVault.value?.asset,
-          amount: borrowAmount.value,
-          plan: plan.value || undefined,
-          subAccount: position.value?.subAccount,
-          hasBorrows: (position.value?.borrowed || 0n) > 0n,
-          onConfirm: () => {
-            setTimeout(() => {
-              send()
-            }, 400)
-          },
+    modal.open(OperationReviewModal, {
+      props: {
+        type: 'borrow',
+        asset: borrowVault.value?.asset,
+        amount: borrowAmount.value,
+        plan: plan.value || undefined,
+        subAccount: position.value?.subAccount,
+        hasBorrows: (position.value?.borrowed || 0n) > 0n,
+        onConfirm: () => {
+          setTimeout(() => {
+            send()
+          }, 400)
         },
-      })
+      },
     })
   }
   finally {
@@ -274,7 +277,12 @@ const send = async () => {
       borrowVault.value.address,
       borrowAmountFixed.value.toFormat({ decimals: Number(borrowVault.value.decimals) }).value,
       position.value.subAccount,
-      { includePermit2Call: true, enabledCollaterals: position.value?.collaterals },
+      {
+        includePermit2Call: true,
+        enabledCollaterals: position.value?.collaterals,
+        enabledController: position.value?.borrow.address,
+        acceptedCollaterals: borrowVault.value.collateralLTVs.filter(c => c.borrowLTV > 0n).map(c => c.collateral),
+      },
     )
     await executeTxPlan(txPlan)
 
@@ -292,30 +300,43 @@ const send = async () => {
     isSubmitting.value = false
   }
 }
-const onCollateralInput = async () => {
-  await nextTick()
-  const result = collateralAmountFixed.value
-    .mul(priceFixed.value)
-    .mul(ltvFixed.value)
-    .div(FixedPoint.fromValue(100n, 0)).round(Number(borrowVault.value?.decimals || 18))
-    .subUnsafe(FixedPoint.fromValue(position.value?.borrowed || 0n, position.value?.borrow.decimals || 18))
-  const zero = FixedPoint.fromValue(0n, Number(borrowVault.value?.decimals || 18))
-  borrowAmount.value = result.lt(zero) ? zero.toString() : trimTrailingZeros(result.toString())
-}
-const onBorrowInput = async () => {
-  await nextTick()
-  if (!collateralAmount.value) {
-    return
+const isLtvDriven = ref(true)
+
+// Reactive borrow amount: uses FixedPoint throughout to avoid precision loss on large bigints.
+// Formula: additionalBorrow = borrowed * (newLtv - currentLtv) / currentLtv
+const computedBorrowAmount = computed(() => {
+  if (!pair.value || !borrowVault.value) return null
+  const borrowed = position.value?.borrowed || 0n
+  if (borrowed === 0n || currentUserLTV.value <= 0) return null
+
+  const newLtvFP = ltvFixed.value
+  const currentLtvFP = FixedPoint.fromValue(valueToNano(currentUserLTV.value, 4), 4)
+  if (currentLtvFP.isZero() || newLtvFP.lte(currentLtvFP)) return '0'
+
+  const borrowedFP = FixedPoint.fromValue(borrowed, Number(borrowVault.value.decimals))
+  const delta = newLtvFP.subUnsafe(currentLtvFP)
+  const additional = borrowedFP.mul(delta).div(currentLtvFP)
+  if (additional.isZero() || additional.isNegative()) return '0'
+  return trimTrailingZeros(additional.toString())
+})
+
+watch(computedBorrowAmount, (val) => {
+  if (isLtvDriven.value && val !== null) {
+    borrowAmount.value = val
   }
-  ltv.value = +borrowAmountFixed.value
-    .addUnsafe(FixedPoint.fromValue(position.value?.borrowed || 0n, position.value?.borrow.decimals || 18))
-    .div(collateralAmountFixed.value.mul(priceFixed.value))
-    .mul(FixedPoint.fromValue(100n, 0))
-    .toUnsafeFloat().toFixed(2)
-}
-const onLtvInput = async () => {
+})
+
+const onBorrowInput = async () => {
+  isLtvDriven.value = false
   await nextTick()
-  onCollateralInput()
+  if (!position.value) return
+  const totalCollateral = getTotalCollateralValue(position.value)
+  if (!totalCollateral || totalCollateral <= 0) return
+  const totalBorrow = nanoToValue(position.value.borrowed, position.value.borrow.decimals || 18) + (+borrowAmount.value || 0)
+  ltv.value = +((totalBorrow / totalCollateral) * 100).toFixed(2)
+}
+const onLtvInput = () => {
+  isLtvDriven.value = true
 }
 const updateEstimates = useDebounceFn(async () => {
   if (!pair.value) {
@@ -323,13 +344,18 @@ const updateEstimates = useDebounceFn(async () => {
   }
   await Promise.all([updateVault(collateralVault.value!.address), updateVault(borrowVault.value!.address)])
   try {
-    health.value = ltvFixed.value.toUnsafeFloat() <= 0
+    // Use LTV from the ratio-based slider (accounts for all collaterals)
+    const newLtvFloat = ltvFixed.value.toUnsafeFloat()
+    health.value = newLtvFloat <= 0
       ? Infinity
-      : (Number(pair.value?.liquidationLTV || 0n) / 100) / ltvFixed.value.toUnsafeFloat()
-    liquidationPrice.value = health.value < 0.1 ? Infinity : priceFixed.value.toUnsafeFloat() / health.value
+      : (Number(pair.value?.liquidationLTV || 0n) / 100) / newLtvFloat
+    liquidationPrice.value = health.value < 1 ? undefined : priceFixed.value.toUnsafeFloat() / health.value
+    // borrowAmount is the ADDITIONAL borrow; estimate Net APY using total borrow
+    const existingBorrow = nanoToValue(position.value?.borrowed || 0n, borrowVault.value!.decimals)
+    const totalBorrow = existingBorrow + (+borrowAmount.value || 0)
     const [collateralUsd, borrowUsd] = await Promise.all([
       getAssetUsdValueOrZero(+collateralAmount.value || 0, collateralVault.value!, 'off-chain'),
-      getAssetUsdValueOrZero(+borrowAmount.value || 0, borrowVault.value!, 'off-chain'),
+      getAssetUsdValueOrZero(totalBorrow, borrowVault.value!, 'off-chain'),
     ])
     netAPY.value = getNetAPY(
       collateralUsd,
@@ -372,19 +398,12 @@ watch([collateralAmount, borrowAmount], async () => {
   }
   updateEstimates()
 })
-
-const interval = setInterval(() => {
-  updateBalance()
-}, POLL_INTERVAL_5S_MS)
-
-onUnmounted(() => {
-  clearInterval(interval)
-})
 </script>
 
 <template>
   <VaultForm
-    title="Borrow"
+    title="Borrow more"
+    description="Borrow additional assets against your existing collateral."
     :loading="isLoading || isPositionsLoading"
     class="flex flex-col gap-16"
     @submit.prevent="submit"
@@ -395,6 +414,7 @@ onUnmounted(() => {
         :vault="collateralVault"
         :pair-vault="borrowVault"
         :assets="pairAssets as VaultAsset[]"
+        :assets-label="pairAssetsLabel"
         size="large"
       />
 
@@ -473,13 +493,20 @@ onUnmounted(() => {
               @invert="priceInvert.toggle"
             />
           </SummaryRow>
-          <SummaryRow label="Liquidation price">
+          <SummaryRow label="Liq. price">
             <SummaryPriceValue
               :before="priceInvert.invertValue(currentLiquidationPrice) != null ? formatSmartAmount(priceInvert.invertValue(currentLiquidationPrice)!) : undefined"
               :after="priceInvert.invertValue(liquidationPrice) != null ? formatSmartAmount(priceInvert.invertValue(liquidationPrice)!) : undefined"
               :symbol="priceInvert.displaySymbol"
               invertible
               @invert="priceInvert.toggle"
+            />
+          </SummaryRow>
+          <SummaryRow label="Liq. buffer">
+            <SummaryValue
+              :before="formatLiqBuffer(priceInvert.invertValue(priceFixed.toUnsafeFloat()), priceInvert.invertValue(currentLiquidationPrice))"
+              :after="formatLiqBuffer(priceInvert.invertValue(priceFixed.toUnsafeFloat()), priceInvert.invertValue(liquidationPrice))"
+              suffix="%"
             />
           </SummaryRow>
           <SummaryRow label="LTV">
@@ -502,7 +529,7 @@ onUnmounted(() => {
             :disabled="reviewBorrowDisabled"
             :loading="isSubmitting || isPreparing"
           >
-            {{ reviewBorrowLabel }}
+            Review Borrow
           </VaultFormSubmit>
         </div>
       </div>

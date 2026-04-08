@@ -16,15 +16,16 @@ The system uses a **provider abstraction** to support multiple APY data sources.
 │  - chain-switch invalidation│
 └──────────┬──────────────────┘
            │ Promise.allSettled
-    ┌──────┴──────┐
-    ▼             ▼
-┌─────────┐  ┌─────────┐
-│DefiLlama│  │ Pendle  │     Providers
-│Provider │  │Provider │
-└────┬────┘  └────┬────┘
-     │            │
-     ▼            ▼
-  yields API   Pendle V2 API
+    ┌──────┼──────────────┐
+    ▼      ▼              ▼
+┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────┐
+│DefiLlama│ │ Pendle  │ │Securitize│ │Stablewatch│  Providers
+│Provider │ │Provider │ │Provider  │ │Provider   │
+└────┬────┘ └────┬────┘ └────┬─────┘ └─────┬─────┘
+     │           │           │              │
+     ▼           ▼           ▼              ▼
+  yields API  Pendle V2   Securitize   Stablewatch
+              API         public feed  API
 ```
 
 ### Types (`entities/intrinsic-apy.ts`)
@@ -55,9 +56,11 @@ All intrinsic APY sources are configured as a static array with discriminated un
 type IntrinsicApySourceConfig =
   | { provider: 'defillama'; address: string; chainId: number; poolId: string; useSpotApy?: boolean }
   | { provider: 'pendle'; address: string; chainId: number; pendleMarket: string; crossChainSourceChainId?: number }
+  | { provider: 'securitize'; address: string; chainId: number; symbol: string; yieldField: 'nav_yield_30d' | 'distribution_yield' }
+  | { provider: 'stablewatch'; address: string; chainId: number }
 ```
 
-Each entry maps a token address on a specific chain to its data source. DefiLlama entries reference a pool UUID; Pendle entries reference a Pendle market address.
+Each entry maps a token address on a specific chain to its data source. DefiLlama entries reference a pool UUID; Pendle entries reference a Pendle market address; Securitize entries reference a token symbol and which yield field to read; Stablewatch entries only need the address and chain ID (matching is done automatically via the API response).
 
 ## Providers
 
@@ -81,6 +84,27 @@ Covers Pendle Principal Tokens (PTs) which earn implied yield from Pendle's fixe
 - **Maturity detection**: If the market's `timestamp` is older than 2 hours, the PT has matured and APY is set to 0
 - **Cross-chain**: Use `crossChainSourceChainId` for PTs whose Pendle market lives on a different chain than the token
 - **Source URL**: `https://app.pendle.finance/trade/markets`
+
+### Securitize (`services/intrinsicApy/securitizeProvider.ts`)
+
+Covers tokenized real-world assets (RWAs) with native yield from Securitize's public feed.
+
+- **API**: Fetch from `https://public-feed.securitize.io/asset-stats?symbol={symbol}`
+- **Matching**: Groups config entries by symbol, fetches per-symbol, matches by token address
+- **APY value**: Reads the configured `yieldField` — either `nav_yield_30d` (30-day NAV yield) or `distribution_yield`
+- **Source URL**: `https://public-feed.securitize.io/asset-stats?symbol={symbol}`
+- **Provider name**: "Securitize"
+
+### Stablewatch (`services/intrinsicApy/stablewatchProvider.ts`)
+
+Covers stablecoins and yield-bearing tokens tracked by Stablewatch. Unlike the other providers, Stablewatch requires an API key, so requests go through a server-side proxy.
+
+- **API**: Server proxy at `/api/intrinsic-apy/stablewatch` (proxies `https://api.stablewatch.io/api/pools`)
+- **API key**: `STABLEWATCH_API_KEY` env var (server-side only). If not set, the proxy returns empty data and the provider produces zero results.
+- **Matching**: Converts `chainId` to a chain name (e.g. 1 → "ethereum", 42161 → "arbitrumone"), then matches by `chainName:address` against the pool's token list
+- **APY value**: `metrics.apy.avg7d` (7-day average)
+- **Source URL**: `https://stablewatch.io`
+- **Provider name**: "Stablewatch"
 
 ## Composable (`composables/useIntrinsicApy.ts`)
 
@@ -148,10 +172,11 @@ modal.open(VaultSupplyApyModal, {
    const providers: IntrinsicApyProvider[] = [
      createDefiLlamaProvider(intrinsicApySources),
      createPendleProvider(intrinsicApySources),
+     createSecuritizeProvider(intrinsicApySources),
      createMyProvider(intrinsicApySources),  // new
    ]
    ```
-5. Add the API domain to the CSP `connect-src` in `nuxt.config.ts`
+5. Add the API domain to the CSP `connect-src` in `nuxt.config.ts` (not needed for server-proxied providers)
 
 ## Adding New Tokens
 
@@ -172,6 +197,24 @@ modal.open(VaultSupplyApyModal, {
    ```
 3. Pendle PTs mature — periodically remove expired entries and add new ones
 
+### Securitize
+
+1. Find the token symbol and address on Securitize's public feed
+2. Determine which yield field to use (`nav_yield_30d` for NAV-based yield, `distribution_yield` for distribution-based)
+3. Add an entry:
+   ```typescript
+   { provider: 'securitize', address: '0x...token', chainId: 1, symbol: 'BUIDL', yieldField: 'nav_yield_30d' }
+   ```
+
+### Stablewatch
+
+1. Find the token address and chain ID
+2. Ensure `STABLEWATCH_API_KEY` is set in the server environment
+3. Add an entry:
+   ```typescript
+   { provider: 'stablewatch', address: '0x...token', chainId: 1 }
+   ```
+
 ## Files
 
 | File | Purpose |
@@ -180,6 +223,9 @@ modal.open(VaultSupplyApyModal, {
 | `entities/custom.ts` | Config array mapping tokens to providers (`intrinsicApySources`) |
 | `services/intrinsicApy/defillamaProvider.ts` | DefiLlama provider (bulk pool fetch, poolId matching) |
 | `services/intrinsicApy/pendleProvider.ts` | Pendle provider (per-market API, batch concurrency, maturity detection) |
+| `services/intrinsicApy/securitizeProvider.ts` | Securitize provider (public feed, symbol-based batching) |
+| `services/intrinsicApy/stablewatchProvider.ts` | Stablewatch provider (server-proxied, chain+address matching) |
+| `server/api/intrinsic-apy/[provider].get.ts` | Nitro server proxy for all intrinsic APY providers (incl. Stablewatch API key injection) |
 | `composables/useIntrinsicApy.ts` | Orchestrator composable (TTL cache, multi-provider, address lookup) |
 | `components/entities/vault/VaultSupplyApyModal.vue` | Supply APY modal with source attribution |
 | `components/entities/vault/VaultBorrowApyModal.vue` | Borrow APY modal with source attribution |

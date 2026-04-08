@@ -2,10 +2,11 @@
 import type { AccountBorrowPosition, AccountDepositPosition } from '~/entities/account'
 import type { Reward } from '~/entities/merkl'
 import type { Campaign } from '~/entities/brevis'
+import type { FuulClaimableReward } from '~/entities/fuul'
 
 defineProps<{
-  type: 'lend' | 'borrow' | 'earn' | 'rewards' | 'brevis-rewards'
-  items: AccountDepositPosition[] | AccountBorrowPosition[] | Reward[] | Campaign[]
+  type: 'lend' | 'borrow' | 'earn' | 'rewards' | 'brevis-rewards' | 'fuul-rewards'
+  items: AccountDepositPosition[] | AccountBorrowPosition[] | Reward[] | Campaign[] | FuulClaimableReward[]
 }>()
 </script>
 
@@ -46,6 +47,13 @@ defineProps<{
         v-for="(campaign, idx) in items"
         :key="`brevis-${idx}`"
         :campaign="campaign as Campaign"
+      />
+    </template>
+    <template v-else-if="type === 'fuul-rewards'">
+      <PortfolioFuulRewardItem
+        v-for="(reward, idx) in items"
+        :key="`fuul-${idx}`"
+        :reward="reward as FuulClaimableReward"
       />
     </template>
   </div>

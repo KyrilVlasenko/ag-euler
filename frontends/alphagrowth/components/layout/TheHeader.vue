@@ -3,7 +3,11 @@ import { onClickOutside } from '@vueuse/core'
 import { offset, useFloating } from '@floating-ui/vue'
 import { useAppKit } from '@reown/appkit/vue'
 import { useAccount } from '@wagmi/vue'
-import { WalletDisconnectModal, SelectChainModal, SettingsModal } from '#components'
+import {
+  WalletDisconnectModal,
+  SelectChainModal,
+  SettingsModal,
+} from '#components'
 import { useModal } from '~/components/ui/composables/useModal'
 import { type MenuItem, getMenuItems } from '~/entities/menu'
 
@@ -13,22 +17,52 @@ const { open } = useAppKit()
 // Wagmi account info
 const { address, isConnected } = useAccount()
 const { chainId } = useEulerAddresses()
+const { isSpyMode, spyShortAddress } = useSpyMode()
 const modal = useModal()
 const route = useRoute()
-const { docsUrl, tosUrl, xUrl, discordUrl, telegramUrl, githubUrl, appTitle, enableEarnPage, enableLendPage, enableExplorePage, enableLoopZapPage, enableCorkBorrowPage } = useDeployConfig()
-const menuItems = getMenuItems(enableEarnPage, enableLendPage, enableExplorePage, enableLoopZapPage, enableCorkBorrowPage)
+const {
+  docsUrl,
+  tosUrl,
+  privacyPolicyUrl,
+  riskDisclosuresUrl,
+  micaWhitepaperUrl,
+  xUrl,
+  discordUrl,
+  telegramUrl,
+  githubUrl,
+  appTitle,
+  enableEarnPage,
+  enableLendPage,
+  enableExplorePage,
+  enableLoopZapPage,
+} = useDeployConfig()
+const menuItems = getMenuItems(
+  enableEarnPage,
+  enableLendPage,
+  enableExplorePage,
+  enableLoopZapPage,
+)
 
-const links = computed(() => [
-  docsUrl ? { title: 'Docs', url: docsUrl } : null,
-  tosUrl ? { title: 'Terms of Use', url: tosUrl } : null,
-].filter(Boolean) as Array<{ title: string, url: string }>)
+const links = computed(
+  () =>
+    [
+      docsUrl ? { title: 'Docs', url: docsUrl } : null,
+      tosUrl ? { title: 'Terms of Use', url: tosUrl } : null,
+      privacyPolicyUrl ? { title: 'Privacy Policy', url: privacyPolicyUrl } : null,
+      riskDisclosuresUrl ? { title: 'Risk Disclosures', url: riskDisclosuresUrl } : null,
+      micaWhitepaperUrl ? { title: 'MiCA Whitepaper', url: micaWhitepaperUrl } : null,
+    ].filter(Boolean) as Array<{ title: string, url: string }>,
+)
 
-const socials = computed(() => [
-  xUrl ? { name: 'x', url: xUrl } : null,
-  discordUrl ? { name: 'discord', url: discordUrl } : null,
-  telegramUrl ? { name: 'telegram', url: telegramUrl } : null,
-  githubUrl ? { name: 'github', url: githubUrl } : null,
-].filter(Boolean) as Array<{ name: string, url: string }>)
+const socials = computed(
+  () =>
+    [
+      xUrl ? { name: 'x', url: xUrl } : null,
+      discordUrl ? { name: 'discord', url: discordUrl } : null,
+      telegramUrl ? { name: 'telegram', url: telegramUrl } : null,
+      githubUrl ? { name: 'github', url: githubUrl } : null,
+    ].filter(Boolean) as Array<{ name: string, url: string }>,
+)
 
 const reference = ref(null)
 const floating = ref(null)
@@ -36,9 +70,7 @@ const isSocialsTooltipVisible = ref(false)
 
 const { floatingStyles, update } = useFloating(reference, floating, {
   placement: 'bottom-start',
-  middleware: [
-    offset({ mainAxis: 10 }),
-  ],
+  middleware: [offset({ mainAxis: 10 })],
 })
 
 const onWalletButtonClick = () => {
@@ -161,11 +193,19 @@ onClickOutside(reference, () => {
           :key="item.name"
           :to="'/' + item.name"
           class="flex gap-8 text-[13px] font-medium no-underline py-10 px-16 rounded-8 text-content-secondary items-center justify-center hover:text-content-primary hover:bg-surface-secondary transition-all"
-          :class="[getIsMenuItemActive(item) ? 'bg-surface-secondary text-content-primary' : '']"
+          :class="[
+            getIsMenuItemActive(item)
+              ? 'bg-surface-secondary text-content-primary'
+              : '',
+          ]"
         >
           <UiIcon
             class="!w-18 !h-18"
-            :class="[getIsMenuItemActive(item) ? 'text-accent-600' : 'text-content-muted']"
+            :class="[
+              getIsMenuItemActive(item)
+                ? 'text-accent-600'
+                : 'text-content-muted',
+            ]"
             :name="item.icon"
           />
           <span>{{ item.label }}</span>
@@ -190,13 +230,19 @@ onClickOutside(reference, () => {
       </UiButton>
       <UiButton
         class="min-w-0 [&>span]:truncate"
-        :icon="isConnected ? 'arrow-down' : 'plus'"
-        :variant="isConnected ? 'secondary' : 'primary'"
+        :icon="(isConnected || isSpyMode) ? 'arrow-down' : 'plus'"
+        :variant="(isConnected || isSpyMode) ? 'secondary' : 'primary'"
         size="medium"
-        :icon-right="isConnected"
+        :icon-right="isConnected || isSpyMode"
         @click="onWalletButtonClick"
       >
-        {{ isConnected ? `${address?.slice(0, 6)}...${address?.slice(-4)}` : 'Connect wallet' }}
+        {{
+          isSpyMode
+            ? spyShortAddress
+            : isConnected
+              ? `${address?.slice(0, 6)}...${address?.slice(-4)}`
+              : "Connect wallet"
+        }}
       </UiButton>
       <UiButton
         class="flex-shrink-0"

@@ -54,7 +54,7 @@ module.exports = {
         // RAW PALETTE COLORS (for specific use cases)
         // ============================================
 
-        // Institutional palette
+        // Brand palette
         'primary': {
           50: 'var(--primary-50)',
           100: 'var(--primary-100)',
@@ -68,6 +68,7 @@ module.exports = {
           900: 'var(--primary-900)',
         },
         'accent': {
+          100: 'var(--accent-100)',
           300: 'var(--accent-300)',
           400: 'var(--accent-400)',
           500: 'var(--accent-500)',
@@ -205,6 +206,10 @@ module.exports = {
         'input-focus': 'var(--ui-input-focus-shadow)',
         'form-field': 'var(--ui-form-field-shadow)',
         'form-field-focus': 'var(--ui-form-field-focus-shadow)',
+        'accent-glow': 'var(--accent-glow)',
+        'accent-sm': 'var(--accent-shadow-sm)',
+        'accent-md': 'var(--accent-shadow-md)',
+        'accent-lg': 'var(--accent-shadow-lg)',
       },
 
       backdropBlur: {

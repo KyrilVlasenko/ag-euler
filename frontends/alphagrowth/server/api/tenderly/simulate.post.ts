@@ -10,7 +10,7 @@ import { isAbortError } from '~/utils/errorHandling'
 const UPSTREAM_TIMEOUT_MS = 30_000
 
 const rateLimiter = createRateLimiter({
-  max: 50,
+  max: 10,
   windowMs: 60_000,
   label: 'tenderly',
 })
@@ -22,6 +22,26 @@ interface SimulateRequest {
   data: string
   value: string
   stateOverrides: ViemStateOverrideEntry[]
+}
+
+interface TenderlySimulationResult {
+  id?: string
+  status?: boolean
+  error_message?: string | null
+}
+
+interface TenderlyTransactionResult {
+  status?: boolean
+  error_message?: string | null
+  transaction_info?: {
+    error_message?: string | null
+  }
+}
+
+interface TenderlySimulateResponse {
+  simulation?: TenderlySimulationResult
+  transaction?: TenderlyTransactionResult
+  error_message?: string | null
 }
 
 function isValidHex(value: unknown): value is string {
@@ -50,6 +70,28 @@ function isValidStateOverride(entry: unknown): entry is ViemStateOverrideEntry {
     }
   }
   return true
+}
+
+function getTenderlySimulationErrorMessage(response: TenderlySimulateResponse): string | undefined {
+  const candidates = [
+    response.transaction?.error_message,
+    response.transaction?.transaction_info?.error_message,
+    response.simulation?.error_message,
+    response.error_message,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim()
+    }
+  }
+
+  const status = response.simulation?.status ?? response.transaction?.status
+  if (status === false) {
+    return 'The simulated transaction reverted.'
+  }
+
+  return undefined
 }
 
 export default defineEventHandler(async (event) => {
@@ -112,8 +154,8 @@ export default defineEventHandler(async (event) => {
       input: data,
       value: value || '0',
       network_id: String(chainId),
-      save: false,
-      save_if_fails: false,
+      save: true,
+      save_if_fails: true,
       simulation_type: 'full',
       state_objects: stateObjects,
     }
@@ -133,7 +175,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const simulateData = await simulateResponse.json() as { simulation?: { id?: string, status?: boolean } }
+    const simulateData = await simulateResponse.json() as TenderlySimulateResponse
     const simulationId = simulateData?.simulation?.id
 
     if (!simulationId) {
@@ -147,10 +189,16 @@ export default defineEventHandler(async (event) => {
     })
 
     if (!shareResponse.ok) {
-      return { url: `https://tdly.co/shared/simulation/${simulationId}` }
+      return {
+        url: `https://tdly.co/shared/simulation/${simulationId}`,
+        errorMessage: getTenderlySimulationErrorMessage(simulateData),
+      }
     }
 
-    return { url: `https://tdly.co/shared/simulation/${simulationId}` }
+    return {
+      url: `https://tdly.co/shared/simulation/${simulationId}`,
+      errorMessage: getTenderlySimulationErrorMessage(simulateData),
+    }
   }
   catch (error: unknown) {
     if (isAbortError(error)) {

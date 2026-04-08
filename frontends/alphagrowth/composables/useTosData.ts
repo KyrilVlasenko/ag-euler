@@ -18,13 +18,9 @@ export async function getTosData(): Promise<TosData> {
     return fetchPromise
   }
 
-  const { tosUrl, tosMdUrl } = useDeployConfig()
+  const { tosUrl } = useDeployConfig()
 
-  if (!tosMdUrl) {
-    throw new Error('TOS markdown URL not configured (NUXT_PUBLIC_CONFIG_TOS_MD_URL)')
-  }
-
-  fetchPromise = fetch(tosMdUrl)
+  fetchPromise = fetch('/api/tos')
     .then((response) => {
       if (!response.ok) {
         throw new Error(`Failed to fetch ToS: ${response.status} ${response.statusText}`)

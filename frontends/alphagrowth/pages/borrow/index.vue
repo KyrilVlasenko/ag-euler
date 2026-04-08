@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { useVaults } from '~/composables/useVaults'
 import { useEulerAddresses } from '~/composables/useEulerAddresses'
-import { getAssetLogoUrl } from '~/composables/useTokens'
+import { getAssetLogoUrl } from '~/composables/useTokenList'
 import { getVaultUtilization } from '~/entities/vault'
 import type { AnyBorrowVaultPair, BorrowVaultPair } from '~/entities/vault'
 import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
-import { getProductByVault, getEntitiesByVault, isVaultFeatured, isVaultDeprecated } from '~/utils/eulerLabelsUtils'
+import { getProductByVault, getEntitiesByVault, isVaultFeatured, isVaultDeprecated, isVaultNotExplorableBorrow } from '~/utils/eulerLabelsUtils'
 import { getEulerLabelEntityLogo } from '~/entities/euler/labels'
 import { useCustomFilters } from '~/composables/useCustomFilters'
 import { useVaultSearch } from '~/composables/useVaultSearch'
 
 const { withIntrinsicBorrowApy, withIntrinsicSupplyApy } = useIntrinsicApy()
-const { getSupplyRewardApy, getBorrowRewardApy } = useRewardsApy()
+const { getSupplyRewardApy, getBorrowRewardApy, getLoopingRewardApy } = useRewardsApy()
 
 const getNetApy = (pair: BorrowVaultPair) => {
   const baseSupplyApy = nanoToValue(pair.collateral.interestRateInfo?.supplyAPY || 0n, 25)
@@ -20,33 +20,42 @@ const getNetApy = (pair: BorrowVaultPair) => {
   const borrowApy = withIntrinsicBorrowApy(baseBorrowApy, pair.borrow.asset.address)
   const supplyRewards = getSupplyRewardApy(pair.collateral.address)
   const borrowRewards = getBorrowRewardApy(pair.borrow.address, pair.collateral.address)
-  return (supplyApy + supplyRewards) - (borrowApy - borrowRewards)
+  const loopingRewards = getLoopingRewardApy(pair.borrow.address, pair.collateral.address)
+  return (supplyApy + supplyRewards) - (borrowApy - borrowRewards) + loopingRewards
 }
 
 const getSortMaxRoe = (pair: BorrowVaultPair) => {
   const borrowLTV = nanoToValue(pair.borrowLTV, 2)
   const maxMultiplier = Math.max(1, Math.floor(100 / (100 - borrowLTV) * 100) / 100)
   const baseSupplyApy = nanoToValue(pair.collateral.interestRateInfo?.supplyAPY || 0n, 25)
+  const baseBorrowApy = nanoToValue(pair.borrow.interestRateInfo.borrowAPY, 25)
   const supplyApy = withIntrinsicSupplyApy(baseSupplyApy, pair.collateral.asset.address)
-  const supplyRewards = getSupplyRewardApy(pair.collateral.address)
-  const supplyApyWithRewards = supplyApy + supplyRewards
-  const netApy = getNetApy(pair)
-  return supplyApyWithRewards + (maxMultiplier - 1) * netApy
+  const borrowApy = withIntrinsicBorrowApy(baseBorrowApy, pair.borrow.asset.address)
+  const supplyFinal = supplyApy + getSupplyRewardApy(pair.collateral.address)
+  const borrowFinal = borrowApy - getBorrowRewardApy(pair.borrow.address, pair.collateral.address)
+  const loopingRewards = getLoopingRewardApy(pair.borrow.address, pair.collateral.address)
+  return supplyFinal + (maxMultiplier - 1) * (supplyFinal - borrowFinal) + loopingRewards
 }
 
 defineOptions({
   name: 'BorrowPage',
 })
 
-const { borrowList, isUpdating, isEscrowUpdating } = useVaults()
+const { borrowList, isEVKUpdating, isEscrowUpdating } = useVaults()
 const { chainId } = useEulerAddresses()
 
 const isPricesReady = ref(false)
-const isLoading = computed(() => isUpdating.value || isEscrowUpdating.value || !isPricesReady.value)
+const isLoading = computed(() => isEVKUpdating.value || isEscrowUpdating.value || !isPricesReady.value)
+const { isSlow } = useSlowLoading(isLoading)
 const { enableEntityBranding } = useDeployConfig()
 const { entities } = useEulerLabels()
 
-const activeBorrowList = computed(() => borrowList.value)
+const activeBorrowList = computed(() =>
+  borrowList.value.filter(pair =>
+    !isVaultNotExplorableBorrow(pair.borrow.address)
+    && !isVaultNotExplorableBorrow(pair.collateral.address),
+  ),
+)
 
 const { searchQuery, matchesSearch, clearSearch } = useVaultSearch<AnyBorrowVaultPair>(pair => [
   pair.collateral.asset.symbol,
@@ -431,10 +440,16 @@ const sortedBorrowList = computed(() => {
     </div>
 
     <div class="flex flex-col flex-1">
-      <UiLoader
+      <div
         v-if="isLoading"
-        class="flex-1 self-center justify-self-center"
-      />
+        class="flex flex-col flex-1 items-center justify-center gap-12"
+      >
+        <UiLoader />
+        <span
+          v-if="isSlow"
+          class="text-p2 text-content-tertiary text-center max-w-[240px]"
+        >Loading is taking longer than usual. Please check your connection.</span>
+      </div>
 
       <VaultsBorrowList
         v-else-if="sortedBorrowList.length"

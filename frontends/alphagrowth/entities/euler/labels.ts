@@ -14,30 +14,47 @@ export type EulerLabelEntity = {
 }
 export type EulerLabelVaultOverride = {
   description?: string
+  portfolioNotice?: string
   deprecationReason?: string
   block?: string[]
   restricted?: string[]
+  notExplorableLend?: boolean
+  notExplorableBorrow?: boolean
+  keyring?: boolean
 }
 
 export type EulerLabelProduct = {
   name: string
   description: string
+  portfolioNotice?: string
   entity: string[] | string
   url: string
   vaults: string[]
   deprecatedVaults?: string[]
   deprecationReason?: string
   isGovernanceLimited?: boolean
+  notExplorable?: boolean
   block?: string[]
   featuredVaults?: string[]
   vaultOverrides?: Record<string, EulerLabelVaultOverride>
+  keyring?: boolean
+}
+
+export type EulerLabelEarnVaultEntry = {
+  address: string
+  block?: string[]
+  restricted?: string[]
+  featured?: boolean
+  deprecated?: boolean
+  deprecationReason?: string
+  description?: string
+  portfolioNotice?: string
+  notExplorable?: boolean
 }
 export type EulerLabelPoint = {
   name: string
   logo: string
   collateralVaults?: string[]
-  isTurtleClub?: boolean
-  skipValidation?: boolean
 }
 
 export type EulerLabelPointReward = {

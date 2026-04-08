@@ -14,12 +14,13 @@ export interface OperationsContext {
   eulerPeripheryAddresses: ComputedRef<Record<string, string | undefined> | null>
   eulerLensAddresses: ComputedRef<Record<string, string | undefined> | null>
 
-  enableTermsOfUseSignature: boolean | Ref<boolean>
-  EVM_PROVIDER_URL: string
+  rpcUrl: string
   PYTH_HERMES_URL: string
   SUBGRAPH_URL: string
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- registry returns polymorphic vault types
   registryGet: (addr: string) => any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- registry returns polymorphic vault types
   registryGetVault: (addr: Address) => any
   permit2Enabled: Ref<boolean>
   rpcProvider: ReturnType<typeof getPublicClient>
@@ -52,13 +53,6 @@ export interface OperationHelpers {
     includePermit2Call?: boolean
   }) => Promise<{ steps: import('~/entities/txPlan').TxStep[], permitCall: import('~/utils/evc-converter').EVCCall | undefined, usesPermit2: boolean }>
 
-  prepareTos: (userAddr: Address) => Promise<{
-    hasSigned: boolean
-    tosData: { tosMessage: string, tosMessageHash: Hex }
-    addTosInterface: (hooks: import('~/entities/saHooksSDK').SaHooksBuilder) => void
-    injectTosCall: (evcCalls: import('~/utils/evc-converter').EVCCall[], hooks: import('~/entities/saHooksSDK').SaHooksBuilder) => void
-  }>
-
   injectPythHealthCheckUpdates: (params: {
     evcCalls: import('~/utils/evc-converter').EVCCall[]
     liabilityVaultAddr: string
@@ -73,11 +67,15 @@ export interface OperationHelpers {
     label: string
   }) => import('~/entities/txPlan').TxStep
 
+  buildNativeWrapCalls: (params: {
+    wrappedTokenAddress: Address
+    amount: bigint
+    userAddr: Address
+  }) => import('~/utils/evc-converter').EVCCall[]
+
   resolveEffectiveCollaterals: (enabledCollaterals?: string[], adding?: string[], removing?: string[]) => string[]
 
   adjustForInterest: (amount: bigint) => bigint
-
-  hasSignature: (userAddress: Address) => Promise<boolean>
 
   preparePythUpdates: (vaultAddresses: string[], sender: Address) => Promise<{ calls: import('~/utils/evc-converter').EVCCall[], totalFee: bigint }>
 

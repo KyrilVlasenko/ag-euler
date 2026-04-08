@@ -3,7 +3,7 @@ import type { NuxtError } from '#app'
 
 const props = defineProps({
   error: {
-    type: Object as () => NuxtError<Record<string, any>>,
+    type: Object as () => NuxtError<Record<string, unknown>>,
     default: () => ({}),
   },
 })

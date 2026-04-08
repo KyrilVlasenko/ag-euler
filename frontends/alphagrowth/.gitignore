@@ -24,5 +24,3 @@ logs
 !.env.example
 
 *storybook.log
-.vercel
-.env*.local

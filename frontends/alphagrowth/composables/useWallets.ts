@@ -1,34 +1,34 @@
-import { type Address, createPublicClient, http, getAddress } from 'viem'
+import { type Address, getAddress, zeroAddress } from 'viem'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
 import { eulerUtilsLensABI } from '~/entities/euler/abis'
 import { erc20BalanceOfAbi } from '~/abis/erc20'
 import { logWarn } from '~/utils/errorHandling'
+import { getPublicClient } from '~/utils/public-client'
 
 // Singleton state
 const balances = shallowRef(new Map<string, bigint>())
 const isLoaded = ref(false)
 const isFetching = ref(false)
 const lastFetchChainId = ref<number | null>(null)
+const lastFetchAddress = ref<string | null>(null)
 let fetchPromise: Promise<void> | null = null
 
 export const useWallets = () => {
   const { isReady } = useVaults()
   const { getByType } = useVaultRegistry()
-  const { address, isConnected, chain } = useWagmi()
+  const { address, isConnected } = useWagmi()
   const { eulerLensAddresses } = useEulerAddresses()
   const { chainId } = useEulerAddresses()
-  const requestUrl = useRequestURL()
+  const { rpcUrl } = useRpcClient()
 
-  // useEulerConfig().EVM_PROVIDER_URL is a plain string captured at call time,
-  // not reactive to chainId changes. Compute the RPC URL reactively instead.
-  const rpcUrl = computed(() => {
-    if (!chainId.value) return ''
-    return `${requestUrl.origin}/api/rpc/${chainId.value}`
-  })
+  const { spyAddress, isSpyMode } = useSpyMode()
+  const balanceAddress = computed(() =>
+    isSpyMode.value ? spyAddress.value : address.value,
+  )
 
   const updateBalances = async () => {
-    // Guard: must be connected
-    if (!isConnected.value || !address.value || !chain.value) {
+    // Guard: must be connected or in spy mode
+    if (!balanceAddress.value || (!isConnected.value && !isSpyMode.value)) {
       return
     }
 
@@ -44,6 +44,7 @@ export const useWallets = () => {
     }
 
     // Collect unique underlying asset addresses from ALL vaults (evk, earn, securitize)
+    // plus external token list tokens for the swap selector
     // Note: We only fetch underlying token balances, NOT vault share balances
     // Share balances are fetched separately on individual pages via account lens
     const addresses = new Set<string>()
@@ -60,6 +61,17 @@ export const useWallets = () => {
       }
     })
 
+    // Include token list addresses (for swap selector zero-balance filtering)
+    const { getAllTokens } = useTokenList()
+    for (const token of getAllTokens()) {
+      try {
+        addresses.add(getAddress(token.address))
+      }
+      catch {
+        // Skip invalid addresses
+      }
+    }
+
     const tokenAddresses = [...addresses] as Address[]
     if (!tokenAddresses.length) {
       isLoaded.value = true
@@ -75,40 +87,34 @@ export const useWallets = () => {
     isFetching.value = true
 
     try {
-      const client = createPublicClient({
-        chain: chain.value,
-        transport: http(rpcUrl.value),
-      })
+      const targetAddress = balanceAddress.value as Address
+      const client = getPublicClient(rpcUrl.value)
 
-      // Try batch call first, fall back to individual calls if it fails
-      let result: bigint[]
-      try {
-        result = await client.readContract({
-          address: utilsLensAddress,
-          abi: eulerUtilsLensABI,
-          functionName: 'tokenBalances',
-          args: [address.value as Address, tokenAddresses],
-        }) as bigint[]
+      // Fetch balances via lens in chunks to stay within gas limits
+      // All chunks fire concurrently so viem's HTTP transport batches them into fewer requests
+      const LENS_BATCH_SIZE = 250
+      const chunks: Address[][] = []
+      for (let i = 0; i < tokenAddresses.length; i += LENS_BATCH_SIZE) {
+        chunks.push(tokenAddresses.slice(i, i + LENS_BATCH_SIZE))
       }
-      catch {
-        // Fallback: fetch balances individually
-        result = await Promise.all(
-          tokenAddresses.map(async (tokenAddr) => {
-            try {
-              const balance = await client.readContract({
-                address: tokenAddr,
-                abi: erc20BalanceOfAbi,
-                functionName: 'balanceOf',
-                args: [address.value as Address],
-              }) as bigint
-              return balance
-            }
-            catch {
-              return 0n
-            }
-          }),
-        )
-      }
+
+      const chunkResults = await Promise.all(
+        chunks.map(async (batch) => {
+          try {
+            return await client.readContract({
+              address: utilsLensAddress,
+              abi: eulerUtilsLensABI,
+              functionName: 'tokenBalances',
+              args: [targetAddress, batch],
+            }) as bigint[]
+          }
+          catch {
+            logWarn('wallets/batchFetch', `Lens tokenBalances failed for chunk of ${batch.length}, using zero fallback`)
+            return batch.map(() => 0n)
+          }
+        }),
+      )
+      const result = chunkResults.flat()
 
       // Only update if still on same chain
       if (chainId.value === currentChainId) {
@@ -118,6 +124,7 @@ export const useWallets = () => {
         })
         balances.value = newBalances
         lastFetchChainId.value = currentChainId
+        lastFetchAddress.value = targetAddress
         isLoaded.value = true
       }
     }
@@ -132,16 +139,20 @@ export const useWallets = () => {
     finally {
       isFetching.value = false
       fetchPromise = null
+      // If dependencies changed while we were fetching, schedule a follow-up run
+      if (needsFetch()) {
+        fetchPromise = updateBalances()
+      }
     }
   }
 
   // Check if we need to fetch on each call
   const needsFetch = () => {
-    return isConnected.value
+    return (isConnected.value || isSpyMode.value)
       && isReady.value
-      && !!address.value
+      && !!balanceAddress.value
       && !!eulerLensAddresses.value?.utilsLens
-      && (lastFetchChainId.value !== chainId.value || !isLoaded.value)
+      && (lastFetchChainId.value !== chainId.value || !isLoaded.value || lastFetchAddress.value !== balanceAddress.value)
       && !isFetching.value
   }
 
@@ -150,11 +161,19 @@ export const useWallets = () => {
     fetchPromise = updateBalances()
   }
 
+  // Retry when dependencies become ready (e.g. vaults load after cold start)
+  watch([isReady, () => balanceAddress.value, () => eulerLensAddresses.value?.utilsLens], () => {
+    if (needsFetch() && !fetchPromise) {
+      fetchPromise = updateBalances()
+    }
+  })
+
   const resetBalances = () => {
     balances.value = new Map()
     isLoaded.value = false
     isFetching.value = false
     lastFetchChainId.value = null
+    lastFetchAddress.value = null
     fetchPromise = null
   }
 
@@ -173,19 +192,20 @@ export const useWallets = () => {
    * Use this for supply/deposit pages to avoid triggering the full batch query.
    */
   const fetchSingleBalance = async (tokenAddress: string): Promise<bigint> => {
-    if (!isConnected.value || !address.value || !chain.value || !tokenAddress) {
+    if ((!isConnected.value && !isSpyMode.value) || !balanceAddress.value || !tokenAddress) {
       return 0n
     }
     try {
-      const client = createPublicClient({
-        chain: chain.value,
-        transport: http(rpcUrl.value),
-      })
+      const client = getPublicClient(rpcUrl.value)
+      const normalized = getAddress(tokenAddress)
+      if (normalized === zeroAddress) {
+        return await client.getBalance({ address: balanceAddress.value as Address })
+      }
       const result = await client.readContract({
-        address: getAddress(tokenAddress) as Address,
+        address: normalized as Address,
         abi: erc20BalanceOfAbi,
         functionName: 'balanceOf',
-        args: [address.value as Address],
+        args: [balanceAddress.value as Address],
       }) as bigint
       return result
     }
@@ -199,15 +219,12 @@ export const useWallets = () => {
    * Use this for savings/deposit positions where user holds vault shares.
    */
   const fetchVaultShareBalance = async (vaultAddress: string, subAccount?: string): Promise<bigint> => {
-    if (!isConnected.value || !address.value || !chain.value || !vaultAddress) {
+    if ((!isConnected.value && !isSpyMode.value) || !balanceAddress.value || !vaultAddress) {
       return 0n
     }
     try {
-      const balanceOfAddress = subAccount || address.value
-      const client = createPublicClient({
-        chain: chain.value,
-        transport: http(rpcUrl.value),
-      })
+      const balanceOfAddress = subAccount || balanceAddress.value
+      const client = getPublicClient(rpcUrl.value)
       const result = await client.readContract({
         address: getAddress(vaultAddress) as Address,
         abi: erc20BalanceOfAbi,

@@ -3,7 +3,6 @@ import { useAccount } from '@wagmi/vue'
 import { FixedPoint } from '~/utils/fixed-point'
 import { useModal } from '~/components/ui/composables/useModal'
 import { OperationReviewModal } from '#components'
-import { useTermsOfUseGate } from '~/composables/useTermsOfUseGate'
 import { useToast } from '~/components/ui/composables/useToast'
 import {
   convertSharesToAssets,
@@ -15,24 +14,27 @@ import { getAssetUsdValueOrZero } from '~/services/pricing/priceProvider'
 import type { TxPlan } from '~/entities/txPlan'
 import { formatNumber, formatSmartAmount } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
+import { isOperationBlocked } from '~/utils/operationGuardRegistry'
 
 const router = useRouter()
 const route = useRoute()
 const modal = useModal()
 const { error } = useToast()
-const { getSubmitLabel, getSubmitDisabled, guardWithTerms } = useTermsOfUseGate()
-const reviewWithdrawLabel = getSubmitLabel('Review Withdraw')
 const { buildWithdrawPlan, buildRedeemPlan, executeTxPlan } = useEulerOperations()
 const { getEarnVault } = useVaults()
 const { isConnected, address } = useAccount()
+const { isSpyMode, spyAddress } = useSpyMode()
+const effectiveAddress = computed(() => isSpyMode.value ? spyAddress.value : address.value)
 const { fetchVaultShareBalance } = useWallets()
 const { runSimulation, simulationError, clearSimulationError } = useTxPlanSimulation()
 const { getSupplyRewardApy } = useRewardsApy()
 const vaultAddress = route.params.vault as string
+useOperationGuard([vaultAddress])
 const subAccountIndex = Number(route.params.subAccount)
 const subAccount = computed(() => {
-  if (!address.value || isNaN(subAccountIndex)) return undefined
-  return getSubAccountAddress(address.value, subAccountIndex)
+  const addr = effectiveAddress.value
+  if (!addr || isNaN(subAccountIndex)) return undefined
+  return getSubAccountAddress(addr, subAccountIndex)
 })
 
 const isLoading = ref(false)
@@ -67,7 +69,7 @@ const isSubmitDisabled = computed(() => {
     || amountFixed.value.isZero() || amountFixed.value.isNegative()
     || !!(estimatesError.value)
 })
-const reviewWithdrawDisabled = getSubmitDisabled(isSubmitDisabled)
+const reviewWithdrawDisabled = isSubmitDisabled
 const supplyAPYDisplay = computed(() => {
   if (!vault.value) return '0.00'
   return formatNumber(nanoToValue(vault.value.interestRateInfo.supplyAPY, 25) + rewardApy.value)
@@ -105,7 +107,7 @@ const fetchShareBalance = async () => {
 }
 
 const updateBalance = async () => {
-  if (!isConnected.value || sharesBalance.value === 0n) {
+  if ((!isConnected.value && !isSpyMode.value) || sharesBalance.value === 0n) {
     assetsBalance.value = 0n
     delta.value = 0n
     return
@@ -119,46 +121,45 @@ const updateBalance = async () => {
   delta.value = assetsBalance.value
 }
 const submit = async () => {
+  if (isOperationBlocked.value) return
   if (isPreparing.value) return
   isPreparing.value = true
   try {
-    await guardWithTerms(async () => {
-      if (!asset.value?.address) {
+    if (!asset.value?.address) {
+      return
+    }
+
+    const isMax = FixedPoint.fromValue(assetsBalance.value, asset.value?.decimals).lte(amountFixed.value)
+
+    try {
+      plan.value = isMax
+        ? await buildRedeemPlan(vaultAddress, amountFixed.value.value, sharesBalance.value, isMax, subAccount.value)
+        : await buildWithdrawPlan(vaultAddress, amountFixed.value.value, subAccount.value)
+    }
+    catch (e) {
+      console.warn('[OperationReviewModal] failed to build plan', e)
+      plan.value = null
+    }
+
+    if (plan.value) {
+      const ok = await runSimulation(plan.value)
+      if (!ok) {
         return
       }
+    }
 
-      const isMax = FixedPoint.fromValue(assetsBalance.value, asset.value?.decimals).lte(amountFixed.value)
-
-      try {
-        plan.value = isMax
-          ? await buildRedeemPlan(vaultAddress, amountFixed.value.value, sharesBalance.value, isMax, subAccount.value)
-          : await buildWithdrawPlan(vaultAddress, amountFixed.value.value, subAccount.value)
-      }
-      catch (e) {
-        console.warn('[OperationReviewModal] failed to build plan', e)
-        plan.value = null
-      }
-
-      if (plan.value) {
-        const ok = await runSimulation(plan.value)
-        if (!ok) {
-          return
-        }
-      }
-
-      modal.open(OperationReviewModal, {
-        props: {
-          type: 'withdraw',
-          asset: asset.value,
-          amount: amount.value,
-          plan: plan.value || undefined,
-          onConfirm: () => {
-            setTimeout(() => {
-              send()
-            }, 400)
-          },
+    modal.open(OperationReviewModal, {
+      props: {
+        type: 'withdraw',
+        asset: asset.value,
+        amount: amount.value,
+        plan: plan.value || undefined,
+        onConfirm: () => {
+          setTimeout(() => {
+            send()
+          }, 400)
         },
-      })
+      },
     })
   }
   finally {
@@ -229,13 +230,7 @@ watchEffect(async () => {
   deltaUsd.value = await getAssetUsdValueOrZero(delta.value, vault.value, 'off-chain')
 })
 
-watch(isConnected, async () => {
-  if (vault.value) {
-    await fetchShareBalance()
-    await updateBalance()
-  }
-})
-watch(address, async () => {
+watch([isConnected, effectiveAddress], async () => {
   if (vault.value) {
     await fetchShareBalance()
     await updateBalance()
@@ -255,7 +250,8 @@ watch(amount, async () => {
 
 <template>
   <VaultForm
-    title="Withdraw"
+    title="Withdraw savings"
+    description="Withdraw your supplied assets back to your wallet."
     class="flex flex-col gap-16"
     :loading="isLoading"
     @submit.prevent="submit"
@@ -307,7 +303,7 @@ watch(amount, async () => {
               suffix="%"
             />
           </SummaryRow>
-          <SummaryRow label="Deposit">
+          <SummaryRow label="Supplied">
             <SummaryValue
               :before="`$${formatNumber(assetsBalanceUsd)}`"
               :after="amount && delta !== assetsBalance && delta >= 0n ? `$${formatNumber(deltaUsd)}` : undefined"
@@ -329,7 +325,7 @@ watch(amount, async () => {
             :loading="isSubmitting || isPreparing"
             :disabled="reviewWithdrawDisabled"
           >
-            {{ reviewWithdrawLabel }}
+            Review Withdraw
           </VaultFormSubmit>
         </div>
       </div>

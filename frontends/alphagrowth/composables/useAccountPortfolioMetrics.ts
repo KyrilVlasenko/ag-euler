@@ -5,6 +5,7 @@ import { useAccountValues } from './useAccountValues'
 import type { Vault } from '~/entities/vault'
 import {
   getAssetUsdValue,
+  getAssetUsdValueOrZero,
   getCollateralUsdValueOrZero,
 } from '~/services/pricing/priceProvider'
 import { nanoToValue } from '~/utils/crypto-utils'
@@ -13,7 +14,7 @@ const portfolioRoe = ref(0)
 const portfolioNetApy = ref(0)
 
 export const useAccountPortfolioMetrics = () => {
-  const { borrowPositions } = useAccountPositions()
+  const { borrowPositions, depositPositions } = useAccountPositions()
   const { totalSuppliedValueInfo, totalBorrowedValueInfo } = useAccountValues()
 
   // Must be called in setup context — useIntrinsicApy uses onMounted
@@ -56,6 +57,24 @@ export const useAccountPortfolioMetrics = () => {
       totalSupplyUSD += supplyUSD
     }
 
+    // Include savings (deposit-only) positions in the portfolio metrics
+    for (const position of depositPositions.value) {
+      const vault = position.vault
+      const supplyUSD = await getAssetUsdValueOrZero(position.assets, vault, 'off-chain')
+
+      const supplyApy = withIntrinsicSupplyApy(
+        nanoToValue(vault.interestRateInfo?.supplyAPY || 0n, 25),
+        vault.asset.address,
+      )
+      const supplyRewardAPY = getSupplyRewardApy(vault.address)
+
+      const netYield = supplyUSD * (supplyApy + supplyRewardAPY)
+
+      totalNetYield += netYield
+      totalEquity += supplyUSD
+      totalSupplyUSD += supplyUSD
+    }
+
     portfolioRoe.value = totalEquity > 0 ? totalNetYield / totalEquity : 0
     portfolioNetApy.value = totalSupplyUSD > 0 ? totalNetYield / totalSupplyUSD : 0
   }
@@ -65,7 +84,7 @@ export const useAccountPortfolioMetrics = () => {
     const _borrowTotal = totalBorrowedValueInfo.value.total
     void rewardsVersion.value
     void intrinsicVersion.value
-    if (borrowPositions.value.length) {
+    if (borrowPositions.value.length || depositPositions.value.length) {
       computePortfolioRoe()
     }
     else {

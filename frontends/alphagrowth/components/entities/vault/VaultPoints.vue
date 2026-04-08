@@ -43,6 +43,7 @@ const onPointClick = (
       :class="{ '-ml-6': index > 0 }"
       :src="`/entities/${point.logo}`"
       alt="Points entity logo"
+      referrerpolicy="no-referrer"
       draggable="false"
       @click="onPointClick(point, $event)"
       @error="onLogoError($event, point.logo)"

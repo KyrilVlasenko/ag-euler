@@ -1,5 +1,7 @@
 import { getAddress } from 'viem'
 import axios from 'axios'
+import { logWarn } from '~/utils/errorHandling'
+import { TIMEOUT_SUBGRAPH_MS } from '~/entities/tuning-constants'
 
 export interface SubgraphPositionEntry {
   subAccount: string
@@ -21,22 +23,28 @@ function parseEntries(entries: string[]): SubgraphPositionEntry[] {
 }
 
 export async function fetchAccountPositions(subgraphUrl: string, walletAddress: string): Promise<AccountPositions> {
-  const prefix = getAddressPrefix(walletAddress)
+  try {
+    const prefix = getAddressPrefix(walletAddress)
 
-  const { data } = await axios.post(subgraphUrl, {
-    query: `query AccountPositions {
-      trackingActiveAccount(id: "${prefix}") {
-        borrows
-        deposits
-      }
-    }`,
-    operationName: 'AccountPositions',
-  })
+    const { data } = await axios.post(subgraphUrl, {
+      query: `query AccountPositions {
+        trackingActiveAccount(id: "${prefix}") {
+          borrows
+          deposits
+        }
+      }`,
+      operationName: 'AccountPositions',
+    }, { timeout: TIMEOUT_SUBGRAPH_MS })
 
-  const account = data.data?.trackingActiveAccount
+    const account = data.data?.trackingActiveAccount
 
-  return {
-    borrows: parseEntries(account?.borrows || []),
-    deposits: parseEntries(account?.deposits || []),
+    return {
+      borrows: parseEntries(account?.borrows || []),
+      deposits: parseEntries(account?.deposits || []),
+    }
+  }
+  catch (error) {
+    logWarn('subgraph/fetchPositions', error)
+    return { borrows: [], deposits: [] }
   }
 }

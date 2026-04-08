@@ -131,7 +131,7 @@
   // Select
   --ui-select-field-color: var(--neutral-800);
   --ui-select-field-background-color: #ffffff;
-  --ui-select-plus-color: var(--accent-600);
+  --ui-select-plus-color: #ffffff;
   --ui-select-plus-background-color: var(--accent-300);
   --ui-select-chip-background-color: var(--neutral-100);
   --ui-select-chip-active-background-color: var(--accent-500);
@@ -148,7 +148,7 @@
   // Toast
   --ui-toast-background-color: #ffffff;
   --ui-toast-box-shadow: var(--shadow-lg);
-  
+
   --ui-toast-info-border-color: rgba(196, 155, 100, 0.3);
   --ui-toast-info-background-color: rgba(196, 155, 100, 0.1);
   --ui-toast-info-text-color: var(--accent-700);
@@ -200,7 +200,7 @@
   --ui-input-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), inset 0 1px 2px rgba(0, 0, 0, 0.02);
   --ui-input-focus-shadow: 0 0 0 3px rgba(196, 155, 100, 0.15), 0 1px 2px rgba(0, 0, 0, 0.05);
   --ui-input-error-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
-  
+
   // Form container shadows
   --ui-form-field-background: var(--neutral-50);
   --ui-form-field-border-color: var(--neutral-200);
@@ -243,6 +243,7 @@
   --ui-checkbox-box-shadow-color: #404040;
   --ui-checkbox-hover-background-color: #1a1a1a;
   --ui-checkbox-label-color: #fafafa;
+  --ui-checkbox-color: #0a0a0a;
 
   // Switch
   --ui-switch-background-color: #262626;
@@ -273,6 +274,8 @@
   --ui-select-field-color: #fafafa;
   --ui-select-field-background-color: #141414;
   --ui-select-chip-background-color: #1a1a1a;
+  --ui-select-chip-active-color: #0a0a0a;
+  --ui-select-plus-color: #0a0a0a;
 
   // Tabs
   --ui-tabs-pills-background-color: #1a1a1a;
@@ -299,7 +302,7 @@
   --ui-input-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(0, 0, 0, 0.2);
   --ui-input-focus-shadow: 0 0 0 3px rgba(212, 169, 90, 0.25), 0 1px 2px rgba(0, 0, 0, 0.3);
   --ui-input-error-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
-  
+
   // Form container shadows
   --ui-form-field-background: #1a1a1a;
   --ui-form-field-border-color: #333333;

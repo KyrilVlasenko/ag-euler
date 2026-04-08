@@ -39,6 +39,10 @@ body {
   }
 }
 
+.auto-link strong {
+  font-weight: 600;
+}
+
 /* Theme-specific visibility utilities */
 [data-theme="dark"] .show-light { display: none !important; }
 [data-theme="dark"] .show-dark { display: block !important; }

@@ -23,11 +23,11 @@ const handleClose = () => {
       v-for="(option, idx) in options"
       :key="`options-${idx}`"
       class="flex items-center py-12 px-16 cursor-pointer rounded-16"
-      :class="[selectedIdx === idx ? 'bg-euler-dark-600' : '']"
+      :class="[selectedIdx === idx ? 'bg-card-hover' : '']"
       @click="onSave(option)"
     >
       <div class="grow-1">
-        <div class="text-euler-dark-1000 mb-2">
+        <div class="text-content-primary mb-2">
           {{ option }}
         </div>
       </div>

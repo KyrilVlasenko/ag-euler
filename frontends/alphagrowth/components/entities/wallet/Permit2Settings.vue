@@ -7,13 +7,13 @@ const onToggle = (value: boolean | undefined) => {
 </script>
 
 <template>
-  <div class="mb-20 rounded-16 border border-euler-dark-600 bg-euler-dark-500 p-16">
+  <div class="mb-20 rounded-16 border border-line-default bg-card p-16">
     <div class="flex items-center justify-between">
       <div>
         <div class="text-p2">
           permit2 approvals
         </div>
-        <div class="text-p3 text-euler-dark-700">
+        <div class="text-p3 text-content-muted">
           Use gasless token approvals
         </div>
       </div>

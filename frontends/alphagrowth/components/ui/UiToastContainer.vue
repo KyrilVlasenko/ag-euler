@@ -1,18 +1,8 @@
 <script setup lang="ts">
-import type { ToastVariant, ToastSize } from './UiToast.vue'
+import type { Toast } from './toast.types'
 import { registerToastContainer, unregisterToastContainer } from '~/components/ui/composables/useToast'
 
-export interface Toast {
-  id: string
-  variant?: ToastVariant
-  size?: ToastSize
-  title: string
-  description?: string
-  actionText?: string
-  persistent?: boolean
-  duration?: number
-  onAction?: () => void
-}
+export type { Toast }
 
 const toasts = ref<Toast[]>([])
 
@@ -105,37 +95,30 @@ onUnmounted(() => {
 <style lang="scss">
 .ui-toast-container {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  top: 24px;
+  right: 24px;
   z-index: 9999;
   pointer-events: none;
 
   @media (max-width: 768px) {
-    top: 10px;
-    right: 10px;
-    left: 10px;
-
-    &__list {
-      max-width: none;
-    }
-  }
-
-  @media (max-width: 480px) {
-    top: 10px;
-    left: 10px;
-    right: 10px;
+    top: 16px;
+    right: 16px;
+    left: 16px;
   }
 
   &__list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    max-width: 400px;
+    gap: 8px;
+    max-width: 360px;
+
+    @media (max-width: 768px) {
+      max-width: none;
+    }
   }
 
   &__toast {
     pointer-events: auto;
-    max-width: 320px;
   }
 }
 </style>

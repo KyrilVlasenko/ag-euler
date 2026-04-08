@@ -1,8 +1,6 @@
-import axios from 'axios'
 import type { IntrinsicApySourceConfig } from '~/entities/custom'
 import type { IntrinsicApyProvider, IntrinsicApyResult } from '~/entities/intrinsic-apy'
 
-const PENDLE_API_BASE = 'https://api-v2.pendle.finance/core/v2'
 const CONCURRENCY = 10
 const MATURITY_STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000
 
@@ -27,9 +25,9 @@ const fetchMarketData = async (
   const apiChainId = source.crossChainSourceChainId ?? source.chainId
 
   try {
-    const url = `${PENDLE_API_BASE}/${apiChainId}/markets/${source.pendleMarket}/data`
-    const res = await axios.get<PendleMarketData>(url, { timeout: 10_000 })
-    const data = res.data
+    const data = await $fetch<PendleMarketData>('/api/intrinsic-apy/pendle', {
+      query: { chainId: apiChainId, market: source.pendleMarket },
+    })
 
     if (!data || isMatured(data.timestamp)) {
       return {

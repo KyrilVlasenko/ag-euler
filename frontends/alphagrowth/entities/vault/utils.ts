@@ -6,7 +6,6 @@ import {
   vaultMaxWithdrawAbi,
   vaultPreviewWithdrawAbi,
 } from '~/abis/vault'
-import { getPublicClient } from '~/utils/public-client'
 
 export const getBorrowVaultsByMap = (vaultsMap: Map<string, Vault>) => {
   const arr: BorrowVaultPair[] = []
@@ -67,9 +66,8 @@ export const convertSharesToAssets = (
   vaultAddress: string,
   sharesAmount: bigint,
 ): Promise<bigint> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
-  const client = getPublicClient(EVM_PROVIDER_URL)
-  return client.readContract({
+  const { client: rpcClient } = useRpcClient()
+  return rpcClient.value!.readContract({
     address: vaultAddress as Address,
     abi: vaultConvertToAssetsAbi,
     functionName: 'convertToAssets',
@@ -80,9 +78,8 @@ export const convertAssetsToShares = (
   vaultAddress: string,
   assetsAmount: bigint,
 ): Promise<bigint> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
-  const client = getPublicClient(EVM_PROVIDER_URL)
-  return client.readContract({
+  const { client: rpcClient } = useRpcClient()
+  return rpcClient.value!.readContract({
     address: vaultAddress as Address,
     abi: vaultConvertToSharesAbi,
     functionName: 'convertToShares',
@@ -90,9 +87,8 @@ export const convertAssetsToShares = (
   }).catch(() => 0n) as Promise<bigint>
 }
 export const previewWithdraw = (vaultAddress: string, assetsAmount: bigint): Promise<bigint> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
-  const client = getPublicClient(EVM_PROVIDER_URL)
-  return client.readContract({
+  const { client: rpcClient } = useRpcClient()
+  return rpcClient.value!.readContract({
     address: vaultAddress as Address,
     abi: vaultPreviewWithdrawAbi,
     functionName: 'previewWithdraw',
@@ -100,9 +96,8 @@ export const previewWithdraw = (vaultAddress: string, assetsAmount: bigint): Pro
   }).catch(() => 0n) as Promise<bigint>
 }
 export const getMaxWithdraw = (vaultAddress: string, account: string): Promise<bigint> => {
-  const { EVM_PROVIDER_URL } = useEulerConfig()
-  const client = getPublicClient(EVM_PROVIDER_URL)
-  return client.readContract({
+  const { client: rpcClient } = useRpcClient()
+  return rpcClient.value!.readContract({
     address: vaultAddress as Address,
     abi: vaultMaxWithdrawAbi,
     functionName: 'maxWithdraw',

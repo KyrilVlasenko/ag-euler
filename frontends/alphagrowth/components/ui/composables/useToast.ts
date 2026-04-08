@@ -1,5 +1,4 @@
-import type { Toast } from '~/components/ui/UiToastContainer.vue'
-import type { ToastVariant, ToastSize } from '~/components/ui/UiToast.vue'
+import type { Toast, ToastVariant, ToastSize } from '~/components/ui/toast.types'
 
 interface ToastOptions {
   variant?: ToastVariant

@@ -1,6 +1,6 @@
 import { useModal } from '~/components/ui/composables/useModal'
 import { UiCustomFilterModal } from '#components'
-import type { CustomFilter, FilterMetricOption, FilterMetricUnit } from '~/components/ui/modals/UiCustomFilterModal.vue'
+import type { CustomFilter, FilterMetricOption, FilterMetricUnit } from '~/components/ui/modals/customFilter.types'
 
 export type { CustomFilter, FilterMetricOption, FilterMetricUnit }
 

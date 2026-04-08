@@ -4,7 +4,6 @@ import { getAddress, type Address, type Abi } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { formatNumber, formatCompactUsdValue } from '~/utils/string-utils'
 import { nanoToValue, roundAndCompactTokens } from '~/utils/crypto-utils'
-import { getPublicClient } from '~/utils/public-client'
 import type { AccountBorrowPosition } from '~/entities/account'
 import { getSubAccountIndex } from '~/entities/account'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
@@ -25,6 +24,10 @@ import {
 import { eulerAccountLensABI } from '~/entities/euler/abis'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
 import { isAnyVaultBlockedByCountry } from '~/composables/useGeoBlock'
+import { isVaultDeprecated, getVaultNotice, isVaultNoticeSpecific } from '~/utils/eulerLabelsUtils'
+import { normalizeAddress } from '~/utils/normalizeAddress'
+import { useModal } from '~/components/ui/composables/useModal'
+import { VaultNetApyModal, PortfolioRoeModal } from '#components'
 
 const { position } = defineProps<{ position: AccountBorrowPosition }>()
 
@@ -36,8 +39,9 @@ const subAccountIndex = computed(() => {
   return getSubAccountIndex(ownerAddress.value, position.subAccount)
 })
 
-const { withIntrinsicBorrowApy, withIntrinsicSupplyApy } = useIntrinsicApy()
-const { getSupplyRewardApy, getBorrowRewardApy } = useRewardsApy()
+const modal = useModal()
+const { withIntrinsicBorrowApy, withIntrinsicSupplyApy, getIntrinsicApy } = useIntrinsicApy()
+const { getSupplyRewardApy, getBorrowRewardApy, getEligibleLoopingRewardApy, getSupplyRewardCampaigns, getBorrowRewardCampaigns, getLoopingRewardCampaigns, hasSupplyRewards, hasBorrowRewards, isLoopingEligible } = useRewardsApy()
 
 const { name: collateralProductName } = useEulerProductOfVault(position.collateral.address)
 const { name: borrowProductName } = useEulerProductOfVault(position.borrow.address)
@@ -51,7 +55,7 @@ const collateralItems = ref<PositionCollateral[]>([])
 const { isReady: isVaultsReady } = useVaults()
 const { getOrFetch } = useVaultRegistry()
 const { eulerLensAddresses, isReady: isEulerAddressesReady, loadEulerConfig } = useEulerAddresses()
-const { EVM_PROVIDER_URL } = useEulerConfig()
+const { client: rpcClient } = useRpcClient()
 
 const hasQueryFailure = computed(() => Boolean(position.liquidityQueryFailure))
 
@@ -66,6 +70,44 @@ const collateralSymbolLabel = computed(() => {
 const pairSymbols = computed(() => `${collateralSymbolLabel.value}/${position.borrow.asset.symbol}`)
 
 const isGeoBlocked = computed(() => isAnyVaultBlockedByCountry(position.collateral.address, position.borrow.address))
+const getSymbolForAddress = (addr: string): string => {
+  if (normalizeAddress(addr) === normalizeAddress(position.borrow.address)) {
+    return position.borrow.asset.symbol
+  }
+  const item = collateralItems.value.find(c =>
+    normalizeAddress(c.vault.address) === normalizeAddress(addr))
+  return item?.vault.asset.symbol ?? position.collateral.asset.symbol
+}
+const prefixNotice = (notice: string, addr: string): string => {
+  if (!isVaultNoticeSpecific(addr)) return notice
+  return `${getSymbolForAddress(addr)} vault: ${notice}`
+}
+const collateralNotices = computed(() => {
+  const addresses = position.collaterals?.length
+    ? position.collaterals
+    : [position.collateral.address]
+  const seenRaw = new Set<string>()
+  return addresses.reduce<string[]>((acc, addr) => {
+    const raw = getVaultNotice(addr)
+    if (!raw || seenRaw.has(raw)) return acc
+    seenRaw.add(raw)
+    acc.push(prefixNotice(raw, addr))
+    return acc
+  }, [])
+})
+const borrowNotice = computed(() => {
+  const raw = getVaultNotice(position.borrow.address)
+  if (!raw) return ''
+  // Dedup against raw collateral notices
+  const addresses = position.collaterals?.length
+    ? position.collaterals
+    : [position.collateral.address]
+  if (addresses.some(addr => getVaultNotice(addr) === raw)) return ''
+  return prefixNotice(raw, position.borrow.address)
+})
+const isAnyDeprecated = computed(() =>
+  isVaultDeprecated(position.collateral.address) || isVaultDeprecated(position.borrow.address),
+)
 
 const isAnyUnverified = computed(() => {
   const collateralUnverified = 'verified' in position.collateral && !position.collateral.verified
@@ -89,6 +131,17 @@ const pairName = computed(() => {
 })
 const supplyRewardAPY = computed(() => getSupplyRewardApy(collateralVault.value.address || ''))
 const borrowRewardAPY = computed(() => getBorrowRewardApy(borrowVault.value.address || '', collateralVault.value.address || ''))
+const loopingRewardAPY = computed(() =>
+  getEligibleLoopingRewardApy(borrowVault.value.address || '', collateralVault.value.address || '', actualMultiplier.value),
+)
+const loopingEligible = computed(() =>
+  isLoopingEligible(borrowVault.value.address || '', collateralVault.value.address || '', actualMultiplier.value),
+)
+const hasRewards = computed(() =>
+  hasSupplyRewards(collateralVault.value.address || '')
+  || hasBorrowRewards(borrowVault.value.address || '', collateralVault.value.address || '')
+  || loopingEligible.value,
+)
 const collateralSupplyApy = computed(() => {
   return withIntrinsicSupplyApy(
     nanoToValue(collateralVault.value.interestRateInfo.supplyAPY || 0n, 25),
@@ -179,6 +232,7 @@ const netAPY = computed(() => {
     borrowApy.value,
     supplyRewardAPY.value || null,
     borrowRewardAPY.value || null,
+    loopingRewardAPY.value || null,
   )
 })
 
@@ -190,8 +244,64 @@ const roe = computed(() => {
     borrowApy.value,
     supplyRewardAPY.value || null,
     borrowRewardAPY.value || null,
+    loopingRewardAPY.value || null,
   )
 })
+
+const intrinsicSupplyApy = computed(() => getIntrinsicApy(collateralVault.value.asset.address))
+const intrinsicBorrowApy = computed(() => getIntrinsicApy(borrowVault.value.asset.address))
+const baseSupplyApy = computed(() => nanoToValue(collateralVault.value.interestRateInfo.supplyAPY || 0n, 25))
+const baseBorrowApy = computed(() => nanoToValue(borrowVault.value.interestRateInfo.borrowAPY || 0n, 25))
+const supplyCampaignsForModal = computed(() => getSupplyRewardCampaigns(collateralVault.value.address))
+const borrowCampaignsForModal = computed(() => getBorrowRewardCampaigns(borrowVault.value.address, collateralVault.value.address))
+const loopingCampaignsForModal = computed(() => getLoopingRewardCampaigns(borrowVault.value.address, collateralVault.value.address))
+
+const userLTV = computed(() => nanoToValue(position.userLTV, 18))
+const actualMultiplier = computed(() => {
+  const equity = collateralValue.value.usd - borrowedValue.value.usd
+  if (equity <= 0) return 0
+  return collateralValue.value.usd / equity
+})
+
+const onNetApyClick = () => {
+  modal.open(VaultNetApyModal, {
+    props: {
+      supplyUSD: collateralValue.value.usd,
+      borrowUSD: borrowedValue.value.usd,
+      baseSupplyAPY: baseSupplyApy.value,
+      baseBorrowAPY: baseBorrowApy.value,
+      intrinsicSupplyAPY: intrinsicSupplyApy.value,
+      intrinsicBorrowAPY: intrinsicBorrowApy.value,
+      supplyRewardAPY: supplyRewardAPY.value || null,
+      borrowRewardAPY: borrowRewardAPY.value || null,
+      loopingRewardAPY: loopingRewardAPY.value || null,
+      loopingEligible: loopingEligible.value,
+      netAPY: netAPY.value,
+      supplyCampaigns: supplyCampaignsForModal.value,
+      borrowCampaigns: borrowCampaignsForModal.value,
+      loopingCampaigns: loopingCampaignsForModal.value,
+    },
+  })
+}
+
+const onRoeClick = () => {
+  modal.open(PortfolioRoeModal, {
+    props: {
+      roe: roe.value,
+      multiplier: Number.isFinite(actualMultiplier.value) ? actualMultiplier.value : 0,
+      supplyAPY: collateralSupplyApy.value,
+      borrowAPY: borrowApy.value,
+      supplyRewardAPY: supplyRewardAPY.value || null,
+      borrowRewardAPY: borrowRewardAPY.value || null,
+      loopingRewardAPY: loopingRewardAPY.value || null,
+      loopingEligible: loopingEligible.value,
+      userLTV: userLTV.value,
+      supplyCampaigns: supplyCampaignsForModal.value,
+      borrowCampaigns: borrowCampaignsForModal.value,
+      loopingCampaigns: loopingCampaignsForModal.value,
+    },
+  })
+}
 
 const loadCollaterals = async () => {
   // Only load additional collaterals if position has multiple,
@@ -228,7 +338,7 @@ const loadCollaterals = async () => {
       throw new Error('Account lens address is not available')
     }
 
-    const client = getPublicClient(EVM_PROVIDER_URL)
+    const client = rpcClient.value!
 
     const items = await Promise.all(
       orderedAddresses.map(async (address) => {
@@ -242,8 +352,8 @@ const loadCollaterals = async () => {
               abi: eulerAccountLensABI as Abi,
               functionName: 'getVaultAccountInfo',
               args: [position.subAccount, address],
-            }) as Record<string, any>
-            assets = res.assets
+            }) as Record<string, unknown>
+            assets = res.assets as bigint
           }
           catch {
             if (address === primaryAddress) {
@@ -280,7 +390,7 @@ onMounted(() => {
 
 <template>
   <NuxtLink
-    :to="`/position/${subAccountIndex}`"
+    :to="{ path: `/position/${subAccountIndex}`, query: { network: $route.query.network } }"
     class="block no-underline bg-surface rounded-xl border border-line-subtle shadow-card transition-all duration-default ease-default hover:shadow-card-hover hover:border-line-emphasis"
   >
     <div class="flex py-16 px-16 pb-12 border-b border-line-default">
@@ -296,6 +406,7 @@ onMounted(() => {
           <AssetAvatar
             :asset="[position.collateral.asset, position.borrow.asset]"
             size="40"
+            :increased-spacing="true"
           />
           <div class="flex-grow min-w-0">
             <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
@@ -314,6 +425,17 @@ onMounted(() => {
                 />
                 Restricted
               </span>
+              <span
+                v-if="isAnyDeprecated"
+                class="inline-flex items-center gap-4 rounded-8 px-8 py-2 bg-warning-100 text-warning-500 text-p5"
+                title="One or more vaults in this position have been deprecated."
+              >
+                <SvgIcon
+                  name="warning"
+                  class="!w-14 !h-14"
+                />
+                Deprecated
+              </span>
             </div>
             <div class="text-h5 text-content-primary truncate">
               {{ pairSymbols }}
@@ -321,24 +443,46 @@ onMounted(() => {
           </div>
           <div class="flex gap-16 items-start shrink-0">
             <div class="flex flex-col items-end">
-              <div class="text-content-tertiary text-p3 mb-4">
+              <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
                 Net APY
+                <SvgIcon
+                  class="!w-16 !h-16 text-content-muted cursor-pointer hover:text-content-secondary"
+                  name="info-circle"
+                  @click.prevent="onNetApyClick"
+                />
               </div>
               <div
-                class="text-p2"
+                class="text-p2 flex items-center"
                 :class="[netAPY >= 0 ? 'text-accent-600' : 'text-error-500']"
               >
+                <SvgIcon
+                  v-if="hasRewards"
+                  class="!w-20 !h-20 text-accent-500 mr-4 cursor-pointer"
+                  name="sparks"
+                  @click.prevent="onNetApyClick"
+                />
                 {{ Number.isFinite(netAPY) ? `${formatNumber(netAPY)}%` : '-' }}
               </div>
             </div>
             <div class="flex flex-col items-end">
-              <div class="text-content-tertiary text-p3 mb-4">
+              <div class="text-content-tertiary text-p3 mb-4 flex items-center gap-4">
                 ROE
+                <SvgIcon
+                  class="!w-16 !h-16 text-content-muted cursor-pointer hover:text-content-secondary"
+                  name="info-circle"
+                  @click.prevent="onRoeClick"
+                />
               </div>
               <div
-                class="text-p2"
+                class="text-p2 flex items-center"
                 :class="[roe >= 0 ? 'text-accent-600' : 'text-error-500']"
               >
+                <SvgIcon
+                  v-if="hasRewards"
+                  class="!w-20 !h-20 text-accent-500 mr-4 cursor-pointer"
+                  name="sparks"
+                  @click.prevent="onRoeClick"
+                />
                 {{ Number.isFinite(roe) ? `${formatNumber(roe)}%` : '-' }}
               </div>
             </div>
@@ -351,6 +495,13 @@ onMounted(() => {
       <div
         class="flex flex-col gap-12 w-full"
       >
+        <PortfolioNotice
+          v-for="(notice, i) in collateralNotices"
+          :key="'c' + i"
+          :notice="notice"
+        />
+        <PortfolioNotice :notice="borrowNotice" />
+        <VaultWarningBanner :warnings="[utilisationWarning]" />
         <div
           v-if="hasQueryFailure"
           class="flex items-center gap-6 text-warning-500 text-p4"
@@ -408,10 +559,6 @@ onMounted(() => {
         <div class="flex justify-between">
           <div class="text-content-tertiary text-p3">
             Health score
-            <VaultWarningIcon
-              :warning="utilisationWarning"
-              tooltip-placement="top-start"
-            />
           </div>
           <div class="text-content-primary text-p3">
             <span

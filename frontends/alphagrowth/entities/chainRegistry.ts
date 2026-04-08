@@ -1,6 +1,5 @@
 import * as allChains from '@reown/appkit/networks'
 import type { AppKitNetwork } from '@reown/appkit/networks'
-import { getParentChainId } from '~/entities/forkChainMap'
 
 const tenderlyMainnetFork: AppKitNetwork = {
   id: 9991,
@@ -8,21 +7,18 @@ const tenderlyMainnetFork: AppKitNetwork = {
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   rpcUrls: {
     default: {
-      http: ['https://virtual.mainnet.eu.rpc.tenderly.co/9ed470ed-cd9d-4822-be5b-71777c0e2a38'],
+      http: [],
     },
   },
-  blockExplorers: {
-    default: { name: 'Tenderly', url: 'https://dashboard.tenderly.co' },
-  },
-}
+} as AppKitNetwork
 
 const chainMap = new Map<number, AppKitNetwork>(
-  (Object.values(allChains) as unknown[])
-    .filter((v): v is AppKitNetwork => v != null && typeof v === 'object' && 'id' in v)
-    .map((chain): [number, AppKitNetwork] => [chain.id as number, chain]),
+  [
+    ...(Object.values(allChains) as unknown[])
+      .filter((v): v is AppKitNetwork => v != null && typeof v === 'object' && 'id' in v),
+    tenderlyMainnetFork,
+  ].map((chain): [number, AppKitNetwork] => [chain.id as number, chain]),
 )
-
-chainMap.set(tenderlyMainnetFork.id as number, tenderlyMainnetFork)
 
 export const getNetworksByChainIds = (ids: readonly number[]): AppKitNetwork[] =>
   ids.map((id) => {
@@ -53,4 +49,4 @@ const DEFI_LLAMA_NAMES: ReadonlyMap<number, string> = new Map([
 ])
 
 export const getDefiLlamaChainName = (chainId: number): string | undefined =>
-  DEFI_LLAMA_NAMES.get(chainId) ?? DEFI_LLAMA_NAMES.get(getParentChainId(chainId))
+  DEFI_LLAMA_NAMES.get(chainId)

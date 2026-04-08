@@ -13,6 +13,9 @@ interface CleanupParams {
   subAccount: Address
   providerUrl: string
   subgraphUrl: string
+  /** Collateral addresses accepted by the controller (BLTV > 0). Collaterals in
+   *  this list are only disabled when they have zero balance (no deposit). */
+  acceptedCollaterals?: string[]
 }
 
 interface EVCAccountInfo {
@@ -21,7 +24,7 @@ interface EVCAccountInfo {
 }
 
 export async function buildCollateralCleanupCalls(params: CleanupParams): Promise<EVCCall[]> {
-  const { evcAddress, accountLensAddress, subAccount, providerUrl, subgraphUrl } = params
+  const { evcAddress, accountLensAddress, subAccount, providerUrl, subgraphUrl, acceptedCollaterals } = params
 
   try {
     const client = getPublicClient(providerUrl)
@@ -87,23 +90,31 @@ export async function buildCollateralCleanupCalls(params: CleanupParams): Promis
       return evcCalls
     }
 
-    // Branch 3: Active borrows exist — only disable collaterals not backing deposits
+    // Branch 3: Active borrows exist — only disable collaterals that don't
+    // contribute to the health score
     const depositSet = new Set(
       deposits
         .filter(d => d.subAccount === normalizedSubAccount)
-        .map(d => d.vault),
+        .map(d => getAddress(d.vault)),
+    )
+
+    const acceptedSet = new Set(
+      (acceptedCollaterals || []).map(a => getAddress(a)),
     )
 
     for (const collateral of collaterals) {
       const normalized = getAddress(collateral)
-      if (!depositSet.has(normalized)) {
-        evcCalls.push({
-          targetContract: evcAddress,
-          onBehalfOfAccount: zeroAddress,
-          value: 0n,
-          data: hooks.getDataForCall(evcAddress, 'disableCollateral', [subAccount, collateral]) as Hash,
-        })
-      }
+      // Keep collaterals that are accepted by the controller and have balance —
+      // they contribute to the health score
+      if (acceptedSet.has(normalized) && depositSet.has(normalized)) continue
+      // Also keep collaterals with deposits even if not accepted (safe default)
+      if (depositSet.has(normalized)) continue
+      evcCalls.push({
+        targetContract: evcAddress,
+        onBehalfOfAccount: zeroAddress,
+        value: 0n,
+        data: hooks.getDataForCall(evcAddress, 'disableCollateral', [subAccount, collateral]) as Hash,
+      })
     }
 
     return evcCalls

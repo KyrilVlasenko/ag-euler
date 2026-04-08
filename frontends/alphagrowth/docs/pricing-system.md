@@ -300,10 +300,13 @@ fetchVaults() generator called
         └───────┬───────┘
            No   │   → Keep vault as-is
                 ↓ Yes
-    Re-fetch with fetchVaultWithPythSimulation()
-    to get fresh Pyth prices
+    Collect all Pyth vaults, then batch re-fetch
+    via executeBatchLensWithPythSimulation():
+    1. Merge + deduplicate all feeds across vaults
+    2. Build Pyth updates + all lens calls
+    3. Execute single EVC batchSimulation
                 ↓
-    Replace original vault with refreshed version
+    Replace original vaults with refreshed versions
                 ↓
     Yield batch (with fresh Pyth prices)
 ```
@@ -327,7 +330,7 @@ fetchVault(vaultAddress) called
     (Pyth prices only valid ~2 min)
                 ↓
     fetchVaultWithPythSimulation():
-    1. Fetch fresh prices from Hermes API
+    1. Fetch fresh prices via /api/pyth/updates server proxy
     2. Build Pyth updatePriceFeeds() batch items
     3. Build getVaultInfoFull() batch item
     4. Execute EVC batchSimulation
@@ -408,7 +411,7 @@ Located in `utils/pyth.ts`:
 - `collectPythFeedsFromVaults(vaults, maxDepth?)` - Collect from multiple vaults, deduplicated
 
 **Price/Update Fetching:**
-- `fetchPythUpdateData(feedIds, endpoint)` - Fetch update data (50ms batching, 15s cache)
+- `fetchPythUpdateData(feedIds, endpoint)` - Fetch update data via `/api/pyth/updates` proxy (50ms batching, 15s cache)
 - `fetchPythPrices(feedIds, endpoint, cacheTtlMs?)` - Fetch actual price values
 
 **Batch Building:**
@@ -547,4 +550,4 @@ See [Intrinsic APY](./intrinsic-apy.md) for the full architecture and provider d
 - `services/intrinsicApy/pendleProvider.ts` - Pendle PT implied yield provider
 - `pages/borrow/[collateral]/[borrow]/index.vue` - Borrow page Pyth refresh logic
 - `pages/lend/[vault]/index.vue` - Lend page Pyth refresh logic
-- `utils/pyth.ts` - Pyth-specific utilities (Hermes API, batch building, `executeLensWithPythSimulation()`)
+- `utils/pyth.ts` - Pyth-specific utilities (server proxy calls, batch building, `executeLensWithPythSimulation()`)

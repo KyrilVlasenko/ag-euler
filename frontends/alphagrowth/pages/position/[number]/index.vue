@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useAccount } from '@wagmi/vue'
 import { getAddress, type Address, type Abi } from 'viem'
-import { getPublicClient } from '~/utils/public-client'
 import { eulerAccountLensABI } from '~/entities/euler/abis'
 import {
   getNetAPY,
@@ -24,7 +23,8 @@ import type { TxPlan } from '~/entities/txPlan'
 import { formatTtl, nanoToValue, roundAndCompactTokens } from '~/utils/crypto-utils'
 import { formatNumber, formatHealthScore, formatUsdValue, formatCompactUsdValue } from '~/utils/string-utils'
 import { isAnyVaultBlockedByCountry, isVaultRestrictedByCountry } from '~/composables/useGeoBlock'
-import { VaultOverviewModal, OperationReviewModal, VaultSupplyApyModal, VaultBorrowApyModal } from '#components'
+import { getVaultNotice } from '~/utils/eulerLabelsUtils'
+import { VaultOverviewModal, OperationReviewModal, VaultSupplyApyModal, VaultBorrowApyModal, VaultNetApyModal, PortfolioRoeModal } from '#components'
 import { useModal } from '~/components/ui/composables/useModal'
 import { useToast } from '~/components/ui/composables/useToast'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
@@ -34,6 +34,7 @@ const router = useRouter()
 const modal = useModal()
 const { error } = useToast()
 const { isConnected } = useAccount()
+const { isSpyMode } = useSpyMode()
 const { isPositionsLoaded, isPositionsLoading, getPositionBySubAccountIndex } = useEulerAccount()
 const { withIntrinsicBorrowApy, withIntrinsicSupplyApy, getIntrinsicApy, getIntrinsicApyInfo } = useIntrinsicApy()
 const { getSupplyRewardApy, getBorrowRewardApy, hasSupplyRewards, hasBorrowRewards, getSupplyRewardCampaigns, getBorrowRewardCampaigns } = useRewardsApy()
@@ -61,7 +62,7 @@ const disableCollateralErrorVault = ref<string | null>(null)
 const { isReady: isVaultsReady } = useVaults()
 const { getOrFetch } = useVaultRegistry()
 const { eulerLensAddresses, isReady: isEulerAddressesReady, loadEulerConfig } = useEulerAddresses()
-const { EVM_PROVIDER_URL } = useEulerConfig()
+const { client: rpcClient } = useRpcClient()
 
 const borrowVault = computed(() => position.value?.borrow)
 const collateralVault = computed(() => position.value?.collateral)
@@ -119,6 +120,13 @@ const isPairFullyRestricted = computed(() => {
   return isVaultRestrictedByCountry(position.value.borrow.address)
     && isVaultRestrictedByCountry(position.value.collateral.address)
 })
+
+const borrowVaultNotice = computed(() => {
+  if (!position.value) return ''
+  return getVaultNotice(position.value.borrow.address)
+})
+
+const getCollateralNotice = (vaultAddress: string): string => getVaultNotice(vaultAddress)
 
 const supplyRewardAPY = computed(() => getSupplyRewardApy(collateralVault.value?.address || ''))
 const borrowRewardAPY = computed(() => getBorrowRewardApy(borrowVault.value?.address || '', collateralVault.value?.address || ''))
@@ -356,6 +364,49 @@ const roe = computed(() => {
   )
 })
 
+const supplyCampaignsForModal = computed(() => getSupplyRewardCampaigns(collateralVault.value?.address || ''))
+const borrowCampaignsForModal = computed(() => getBorrowRewardCampaigns(borrowVault.value?.address || '', collateralVault.value?.address || ''))
+
+const positionMultiplier = computed(() => {
+  const equity = collateralValue.value.usd - borrowMarketValue.value.usd
+  if (equity <= 0) return 0
+  return collateralValue.value.usd / equity
+})
+
+const onNetApyInfoClick = () => {
+  modal.open(VaultNetApyModal, {
+    props: {
+      supplyUSD: collateralValue.value.usd,
+      borrowUSD: borrowMarketValue.value.usd,
+      baseSupplyAPY: baseSupplyAPY.value,
+      baseBorrowAPY: baseBorrowAPY.value,
+      intrinsicSupplyAPY: _intrinsicSupplyAPY.value,
+      intrinsicBorrowAPY: intrinsicBorrowAPY.value,
+      supplyRewardAPY: supplyRewardAPY.value || null,
+      borrowRewardAPY: borrowRewardAPY.value || null,
+      netAPY: netAPY.value,
+      supplyCampaigns: supplyCampaignsForModal.value,
+      borrowCampaigns: borrowCampaignsForModal.value,
+    },
+  })
+}
+
+const onRoeInfoClick = () => {
+  modal.open(PortfolioRoeModal, {
+    props: {
+      roe: roe.value,
+      multiplier: Number.isFinite(positionMultiplier.value) ? positionMultiplier.value : 0,
+      supplyAPY: collateralSupplyApy.value,
+      borrowAPY: borrowApy.value,
+      supplyRewardAPY: supplyRewardAPY.value || null,
+      borrowRewardAPY: borrowRewardAPY.value || null,
+      userLTV: position.value ? nanoToValue(position.value.userLTV, 18) : 0,
+      supplyCampaigns: supplyCampaignsForModal.value,
+      borrowCampaigns: borrowCampaignsForModal.value,
+    },
+  })
+}
+
 const isPrimaryCollateral = (vault: Vault | SecuritizeVault) => {
   if (!primaryCollateralAddress.value) {
     return false
@@ -452,7 +503,7 @@ const loadCollaterals = async () => {
       throw new Error('Account lens address is not available')
     }
 
-    const client = getPublicClient(EVM_PROVIDER_URL)
+    const client = rpcClient.value!
 
     const items = await Promise.all(
       orderedAddresses.map(async (address) => {
@@ -466,8 +517,8 @@ const loadCollaterals = async () => {
               abi: eulerAccountLensABI as Abi,
               functionName: 'getAccountInfo',
               args: [position.value!.subAccount, address],
-            }) as Record<string, any>
-            assets = res.vaultAccountInfo.assets
+            }) as Record<string, Record<string, unknown>>
+            assets = res.vaultAccountInfo.assets as bigint
           }
           catch {
             if (address === primaryAddress) {
@@ -566,8 +617,8 @@ const send = async (collateralAddress: string) => {
   }
 }
 const load = async () => {
-  // Redirect to portfolio if not connected
-  if (!isConnected.value) {
+  // Redirect to portfolio if not connected and not in spy mode
+  if (!isConnected.value && !isSpyMode.value) {
     router.replace('/portfolio')
     return
   }
@@ -625,20 +676,21 @@ const openCollateralInfoModal = (vault: Vault | SecuritizeVault) => {
   const isSecuritize = 'type' in vault && vault.type === 'securitize'
   modal.open(VaultOverviewModal, {
     props: isSecuritize
-      ? { securitizeVault: vault as SecuritizeVault }
-      : { vault: vault as Vault },
+      ? { title: 'Position information', securitizeVault: vault as SecuritizeVault }
+      : { title: 'Position information', vault: vault as Vault },
   })
 }
 const openPairInfoModal = () => {
   const allCollateralVaults = collateralItems.value.map(item => item.vault)
   modal.open(VaultOverviewModal, {
     props: {
+      title: 'Position information',
       pair: position.value,
       collateralVaults: allCollateralVaults,
     },
   })
 }
-watch(isConnected, () => {
+watch([isConnected, isSpyMode], () => {
   load()
 }, { immediate: true })
 </script>
@@ -651,6 +703,10 @@ watch(isConnected, () => {
       </div>
     </template>
     <template v-else-if="position">
+      <div class="text-h6 text-content-secondary bg-surface-elevated py-4 px-12 rounded-8 border border-line-default self-start">
+        Position {{ positionIndex }}
+      </div>
+
       <VaultLabelsAndAssets
         :vault="position.collateral"
         :assets="pairAssets"
@@ -663,7 +719,6 @@ watch(isConnected, () => {
         description="Oracle pricing is currently unavailable. Some position details cannot be displayed. You can still repay debt and supply collateral."
         variant="warning"
         size="compact"
-        persistent
       />
 
       <div
@@ -673,34 +728,44 @@ watch(isConnected, () => {
         <div class="flex justify-between items-center">
           <div class="flex items-center gap-4 text-p2 text-content-secondary">
             Net APY
-            <UiFootnote
-              title="Net APY"
-              text="Net annual percentage yield for this position. Calculated as supply income minus borrow costs, divided by total supplied value."
-              tooltip-placement="bottom-start"
-              class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
+            <SvgIcon
+              class="!w-16 !h-16 text-content-muted cursor-pointer hover:text-content-secondary"
+              name="info-circle"
+              @click="onNetApyInfoClick"
             />
           </div>
           <div
-            class="text-h5"
+            class="text-h5 flex items-center gap-4"
             :class="[netAPY >= 0 ? 'text-accent-600' : 'text-error-500']"
           >
+            <SvgIcon
+              v-if="hasSupplyRewards(collateralVault?.address || '') || hasBorrowRewards(borrowVault?.address || '', collateralVault?.address || '')"
+              class="!w-20 !h-20 text-accent-500 cursor-pointer"
+              name="sparks"
+              @click="onNetApyInfoClick"
+            />
             {{ Number.isFinite(netAPY) ? `${formatNumber(netAPY)}%` : '-' }}
           </div>
         </div>
         <div class="flex justify-between items-center">
           <div class="flex items-center gap-4 text-p2 text-content-secondary">
             ROE
-            <UiFootnote
-              title="ROE"
-              text="Return on equity for this position. Calculated as net yield (supply income minus borrow costs) divided by equity (collateral value minus debt)."
-              tooltip-placement="bottom-start"
-              class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
+            <SvgIcon
+              class="!w-16 !h-16 text-content-muted cursor-pointer hover:text-content-secondary"
+              name="info-circle"
+              @click="onRoeInfoClick"
             />
           </div>
           <div
-            class="text-h5"
+            class="text-h5 flex items-center gap-4"
             :class="[roe >= 0 ? 'text-accent-600' : 'text-error-500']"
           >
+            <SvgIcon
+              v-if="hasSupplyRewards(collateralVault?.address || '') || hasBorrowRewards(borrowVault?.address || '', collateralVault?.address || '')"
+              class="!w-20 !h-20 text-accent-500 cursor-pointer"
+              name="sparks"
+              @click="onRoeInfoClick"
+            />
             {{ Number.isFinite(roe) ? `${formatNumber(roe)}%` : '-' }}
           </div>
         </div>
@@ -717,12 +782,8 @@ watch(isConnected, () => {
         v-if="!hasNoBorrow"
         class="rounded-12 bg-card border border-line-default shadow-card p-16"
       >
-        <div class="text-h4 text-neutral-800 flex items-center flex-wrap gap-12 mb-16">
+        <div class="text-h4 text-neutral-800 mb-16">
           Position risk
-
-          <div class="text-h6 text-content-secondary bg-surface-elevated py-4 px-12 rounded-8 border border-line-default">
-            Position {{ positionIndex }}
-          </div>
         </div>
         <div class="flex justify-between gap-8 flex-wrap mb-16">
           <div class="text-neutral-500 text-p3">
@@ -809,6 +870,11 @@ watch(isConnected, () => {
             </div>
           </div>
           <div class="pt-12 px-16 pb-16">
+            <PortfolioNotice
+              v-if="borrowVaultNotice"
+              :notice="borrowVaultNotice"
+              class="mb-16"
+            />
             <div class="flex justify-between gap-8 flex-wrap mb-16">
               <div class="text-content-secondary text-p3">
                 Market value
@@ -850,7 +916,7 @@ watch(isConnected, () => {
             </div>
             <div class="flex justify-between gap-8 flex-wrap mb-12">
               <div class="text-neutral-500 text-p3">
-                Liquidation price
+                Liq. price
               </div>
               <div class="text-neutral-800 text-p3">
                 {{ borrowLiquidationPrice ? `$${formatNumber(borrowLiquidationPrice)}` : '-' }}
@@ -864,7 +930,6 @@ watch(isConnected, () => {
               description="This position is eligible for liquidation. Multiply and borrow are disabled."
               variant="error"
               size="compact"
-              persistent
             />
             <UiToast
               v-if="isOverBorrowLTV && !isEligibleForLiquidation"
@@ -873,7 +938,6 @@ watch(isConnected, () => {
               description="Your current LTV exceeds the borrow limit. Repay debt or supply more collateral to borrow again."
               variant="warning"
               size="compact"
-              persistent
             />
             <UiToast
               v-if="isPositionGeoBlocked || isPairFullyRestricted"
@@ -882,7 +946,6 @@ watch(isConnected, () => {
               description="This pair is not available in your region. You can still repay existing debt."
               variant="warning"
               size="compact"
-              persistent
             />
             <UiToast
               v-if="!isPositionGeoBlocked && !isPairFullyRestricted && (isBorrowRestricted || isMultiplyRestricted)"
@@ -891,7 +954,6 @@ watch(isConnected, () => {
               description="Some operations on this pair are restricted in your region. Supply, withdraw, and repay remain available."
               variant="warning"
               size="compact"
-              persistent
             />
             <div
               class="flex justify-between gap-8 mt-4"
@@ -930,7 +992,7 @@ watch(isConnected, () => {
                 :disabled="isPositionGeoBlocked || isPairFullyRestricted || hasQueryFailure"
                 :to="isPositionGeoBlocked || isPairFullyRestricted || hasQueryFailure ? undefined : `/position/${positionIndex}/borrow/swap`"
               >
-                Debt swap
+                Refinance debt
               </UiButton>
             </div>
           </div>
@@ -938,7 +1000,7 @@ watch(isConnected, () => {
       </div>
       <div>
         <div class="mb-12 text-h4 text-neutral-800">
-          {{ !hasNoBorrow ? 'Collateral' : 'Deposit' }}
+          {{ !hasNoBorrow ? 'Collateral' : 'Supply' }}
         </div>
         <div class="flex flex-col gap-12">
           <div
@@ -973,6 +1035,11 @@ watch(isConnected, () => {
               </div>
             </div>
             <div class="pt-12 px-16 pb-16">
+              <PortfolioNotice
+                v-if="getCollateralNotice(collateral.vault.address)"
+                :notice="getCollateralNotice(collateral.vault.address)"
+                class="mb-16"
+              />
               <div class="flex justify-between gap-8 flex-wrap mb-16">
                 <div class="text-content-secondary text-p3">
                   {{ !hasNoBorrow ? 'Market value' : 'Supply value' }}
@@ -1016,7 +1083,7 @@ watch(isConnected, () => {
                 class="flex justify-between gap-8 flex-wrap mb-16"
               >
                 <div class="text-neutral-500 text-p3">
-                  Liquidation price
+                  Liq. price
                 </div>
                 <div class="text-neutral-800 text-p3">
                   {{ liquidationPrice ? `$${formatNumber(liquidationPrice)}` : '-' }}
@@ -1040,7 +1107,6 @@ watch(isConnected, () => {
                 description="Withdraw is disabled while this position is eligible for liquidation."
                 variant="error"
                 size="compact"
-                persistent
               />
               <div
                 v-if="!hasNoBorrow"
@@ -1072,7 +1138,7 @@ watch(isConnected, () => {
                   :disabled="isPositionGeoBlocked || isPairFullyRestricted || hasQueryFailure"
                   :to="isPositionGeoBlocked || isPairFullyRestricted || hasQueryFailure ? undefined : `/position/${positionIndex}/collateral/swap?collateral=${collateral.vault.address}`"
                 >
-                  Collateral swap
+                  Swap collateral
                 </UiButton>
               </div>
               <div

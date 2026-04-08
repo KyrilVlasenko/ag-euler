@@ -288,173 +288,185 @@ const openLegalModal = () => {
       </div>
       <div class="text-red-800">
         Red-800
-      </div>
-      <div class="text-red-1000">
-        Red-1000
-      </div>
-      <div class="text-green-600">
-        Green-600
-      </div>
-      <div class="text-green-1000">
-        Green-1000
-      </div>
-      <div class="text-yellow-600">
-        Yellow-600
-      </div>
-      <div class="text-yellow-1000">
-        Yellow-1000
-      </div>
-      <div class="text-yellow-warning-700">
-        Yellow-warning-700
-      </div>
-      <div class="text-slice-of-heaven-300">
-        Slice-of-heaven-300
-      </div>
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="close"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="copy"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="edit"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="filter"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="gas"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="health"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="loading"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="percent"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="plus"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="info-circle"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="search"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="shield"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="sparks"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="trash"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="unlink"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="wallet"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="warning-circle"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="arrow-down"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="arrow-top-right"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="lend-outline"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="lend-filled"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="borrow-outline"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="borrow-filled"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="portfolio-outline"
-      />
-      <SvgIcon
-        class="!w-24 !h-24"
-        name="portfolio-filled"
-      />
-      <UiIcon
-        class="!w-24 !h-24"
-        name="map-pin-off"
-      />
-      <UiIcon
-        class="!w-24 !h-24"
-        name="globe"
-      />
-      <UiIcon
-        class="!w-24 !h-24"
-        name="search-user"
-      />
-      <UiIcon
-        class="!w-24 !h-24"
-        name="chart"
-      />
-    </div>
-    <div class="flex items-center mb-8">
-      <UiRadio
-        v-model="radioModel"
-        name="test"
-        label="Test"
-        self-value="radio-test-1"
-      />
-      <UiRadio
-        v-model="radioModel"
-        name="test"
-        label="Test"
-        self-value="radio-test-2"
-      />
-      <UiRadio
-        v-model="radioModel"
-        name="test"
-        label="Test"
-        self-value="radio-test-3"
-        disabled
-      />
-    </div>
+        <div class="text-error-500">
+          Error
+        </div>
+        <div class="text-red-1000">
+          Red-1000
+          <div class="text-success-500">
+            Success
+          </div>
+          <div class="text-green-600">
+            Green-600
+            <div class="text-warning-500">
+              Warning
+            </div>
+            <div class="text-green-1000">
+              Green-1000
+            </div>
+            <div class="text-yellow-600">
+              Yellow-600
+            </div>
+            <div class="text-yellow-1000">
+              Yellow-1000
+            </div>
+            <div class="text-yellow-warning-700">
+              Yellow-warning-700
+            </div>
+            <div class="text-slice-of-heaven-300">
+              Slice-of-heaven-300
+              <div class="text-accent-500">
+                Accent
+              </div>
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="close"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="copy"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="edit"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="filter"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="gas"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="health"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="loading"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="percent"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="plus"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="info-circle"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="search"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="shield"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="sparks"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="trash"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="unlink"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="wallet"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="warning-circle"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="arrow-down"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="arrow-top-right"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="lend-outline"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="lend-filled"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="borrow-outline"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="borrow-filled"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="portfolio-outline"
+              />
+              <SvgIcon
+                class="!w-24 !h-24"
+                name="portfolio-filled"
+              />
+              <UiIcon
+                class="!w-24 !h-24"
+                name="map-pin-off"
+              />
+              <UiIcon
+                class="!w-24 !h-24"
+                name="globe"
+              />
+              <UiIcon
+                class="!w-24 !h-24"
+                name="search-user"
+              />
+              <UiIcon
+                class="!w-24 !h-24"
+                name="chart"
+              />
+            </div>
+            <div class="flex items-center mb-8">
+              <UiRadio
+                v-model="radioModel"
+                name="test"
+                label="Test"
+                self-value="radio-test-1"
+              />
+              <UiRadio
+                v-model="radioModel"
+                name="test"
+                label="Test"
+                self-value="radio-test-2"
+              />
+              <UiRadio
+                v-model="radioModel"
+                name="test"
+                label="Test"
+                self-value="radio-test-3"
+                disabled
+              />
+            </div>
 
-    <div class="flex items-center gap-8">
-      Health score
-      <UiFootnote
-        title="Your health score"
-        text="Health score measures how safe your position is. A score above 1 means you're safe; below 1 means you're at risk of liquidation."
-      />
+            <div class="flex items-center gap-8">
+              Health score
+              <UiFootnote
+                title="Your health score"
+                text="Health score measures how safe your position is. A score above 1 means you're safe; below 1 means you're at risk of liquidation."
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </template>

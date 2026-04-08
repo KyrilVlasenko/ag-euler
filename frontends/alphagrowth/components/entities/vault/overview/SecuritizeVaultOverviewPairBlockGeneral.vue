@@ -1,29 +1,21 @@
 <script setup lang="ts">
 import { formatNumber, formatSignificant } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
-import { type SecuritizeBorrowVaultPair, getCurrentLiquidationLTV, isLiquidationLTVRamping, getRampTimeRemaining } from '~/entities/vault'
+import { type SecuritizeBorrowVaultPair, getCurrentLiquidationLTV, isLiquidationLTVRamping } from '~/entities/vault'
 import { getAssetOraclePrice } from '~/services/pricing/priceProvider'
 import { getMaxMultiplier, getMaxRoe } from '~/utils/leverage'
 import { useModal } from '~/components/ui/composables/useModal'
-import { VaultBorrowApyModal, VaultSupplyApyModal } from '#components'
+import { VaultBorrowApyModal, VaultRampDownModal, VaultSupplyApyModal } from '#components'
+import type { LTVRampConfig } from '~/entities/vault/ltv'
 
 const { pair } = defineProps<{ pair: SecuritizeBorrowVaultPair }>()
 
 const currentLiquidationLTV = computed(() => getCurrentLiquidationLTV(pair))
 const isRamping = computed(() => isLiquidationLTVRamping(pair))
 
-const formatTimeRemaining = (seconds: bigint): string => {
-  const days = Number(seconds) / 86400
-  if (days >= 1) return `${Math.ceil(days)} day${Math.ceil(days) > 1 ? 's' : ''}`
-  const hours = Number(seconds) / 3600
-  if (hours >= 1) return `${Math.ceil(hours)} hour${Math.ceil(hours) > 1 ? 's' : ''}`
-  const minutes = Number(seconds) / 60
-  return `${Math.ceil(minutes)} minute${Math.ceil(minutes) > 1 ? 's' : ''}`
-}
-
 const modal = useModal()
 const { withIntrinsicBorrowApy, getIntrinsicApy, getIntrinsicApyInfo } = useIntrinsicApy()
-const { getSupplyRewardApy, getBorrowRewardApy, getSupplyRewardCampaigns, getBorrowRewardCampaigns, hasSupplyRewards, hasBorrowRewards } = useRewardsApy()
+const { getSupplyRewardApy, getBorrowRewardApy, getLoopingRewardApy, getSupplyRewardCampaigns, getBorrowRewardCampaigns, hasSupplyRewards, hasBorrowRewards } = useRewardsApy()
 
 // Borrow APY (from EVK borrow vault)
 const totalBorrowRewardsAPY = computed(() => getBorrowRewardApy(pair.borrow.address, pair.collateral.address))
@@ -43,9 +35,10 @@ const intrinsicSupplyApy = computed(() => getIntrinsicApy(pair.collateral.asset.
 const supplyApyWithRewards = computed(() => intrinsicSupplyApy.value + collateralRewardAPY.value)
 const supplyRewardInfo = computed(() => getSupplyRewardCampaigns(pair.collateral.address))
 
+const loopingRewardAPY = computed(() => getLoopingRewardApy(pair.borrow.address, pair.collateral.address))
 const maxMultiplier = computed(() => getMaxMultiplier(pair.borrowLTV))
 const maxRoe = computed(() =>
-  getMaxRoe(maxMultiplier.value, supplyApyWithRewards.value, borrowApyWithRewards.value),
+  getMaxRoe(maxMultiplier.value, supplyApyWithRewards.value, borrowApyWithRewards.value, loopingRewardAPY.value),
 )
 
 const priceInvert = usePriceInvert(
@@ -88,10 +81,16 @@ const onBorrowInfoIconClick = () => {
     },
   })
 }
+
+const onRampDownInfoIconClick = (event: MouseEvent, pair: LTVRampConfig) => {
+  modal.open(VaultRampDownModal, {
+    props: pair,
+  })
+}
 </script>
 
 <template>
-  <div class="bg-euler-dark-300 rounded-16 flex flex-col gap-24 p-24">
+  <div class="bg-body rounded-16 flex flex-col gap-24 p-24">
     <p class="text-h3 text-white">
       Overview
     </p>
@@ -101,10 +100,10 @@ const onBorrowInfoIconClick = () => {
       >
         <template v-if="price !== null">
           {{ formatSignificant(priceInvert.invertValue(price), 4) }}
-          <span class="text-euler-dark-900">{{ priceInvert.displaySymbol }}</span>
+          <span class="text-content-primary">{{ priceInvert.displaySymbol }}</span>
           <button
             type="button"
-            class="ml-4 text-euler-dark-900 hover:text-white transition-colors inline-flex"
+            class="ml-4 text-content-primary hover:text-white transition-colors inline-flex"
             @click.stop="priceInvert.toggle"
           >
             <SvgIcon
@@ -114,7 +113,7 @@ const onBorrowInfoIconClick = () => {
           </button>
         </template>
         <template v-else>
-          <span class="text-euler-dark-900">-</span>
+          <span class="text-content-primary">-</span>
         </template>
       </VaultOverviewLabelValue>
       <VaultOverviewLabelValue>
@@ -171,28 +170,28 @@ const onBorrowInfoIconClick = () => {
         label="Max LTV"
         :value="`${formatNumber(nanoToValue(pair.borrowLTV, 2), 2)}%`"
       />
-      <VaultOverviewLabelValue
-        label="Liquidation LTV"
-      >
-        <div class="flex items-center gap-4">
+      <VaultOverviewLabelValue>
+        <template #label>
+          <span class="flex items-center gap-4">
+            Liquidation LTV
+            <SvgIcon
+              v-if="isRamping"
+              class="!w-20 !h-20 text-content-muted cursor-pointer hover:text-content-secondary"
+              name="info-circle"
+              @click.stop.prevent="onRampDownInfoIconClick($event, pair)"
+            />
+          </span>
+        </template>
+        <span class="flex items-center gap-4">
           <SvgIcon
             v-if="isRamping"
             name="arrow-top-right"
-            class="!w-14 !h-14 text-warning-500 shrink-0 rotate-180"
+            class="!w-14 !h-14 text-warning-500 shrink-0 rotate-180 cursor-pointer"
             title="Liquidation LTV ramping down"
+            @click.stop.prevent="onRampDownInfoIconClick($event, pair)"
           />
-          <span>{{ `${formatNumber(nanoToValue(currentLiquidationLTV, 2), 2)}%` }}</span>
-          <span
-            v-if="isRamping"
-            @click.stop.prevent
-          >
-            <UiFootnote
-              title="LTV Ramping"
-              :text="`The Liquidation LTV for this pair is being reduced. Target: ${formatNumber(nanoToValue(pair.liquidationLTV, 2), 2)}%. Time remaining: ${formatTimeRemaining(getRampTimeRemaining(pair))}.`"
-              class="[--ui-footnote-icon-color:var(--c-content-tertiary)]"
-            />
-          </span>
-        </div>
+          {{ `${formatNumber(nanoToValue(currentLiquidationLTV, 2), 2)}%` }}
+        </span>
       </VaultOverviewLabelValue>
     </div>
   </div>

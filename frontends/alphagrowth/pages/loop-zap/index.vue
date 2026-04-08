@@ -232,7 +232,7 @@ const handleZap = () => {
         </div>
 
         <button
-          class="w-full py-16 rounded-12 text-body-md font-semibold transition-all bg-accent-400 text-euler-dark-900 hover:bg-accent-300 shadow-lg hover:shadow-xl"
+          class="w-full py-16 rounded-12 text-body-md font-semibold transition-all bg-accent-400 ui-button--primary text-euler-dark-900 hover:bg-accent-300 shadow-lg hover:shadow-xl"
           @click="resetState"
         >
           Zap Again

@@ -1,4 +1,4 @@
-import { WagmiPlugin, http } from '@wagmi/vue'
+import { WagmiPlugin } from '@wagmi/vue'
 import { createAppKit } from '@reown/appkit/vue'
 import type { AppKitNetwork } from '@reown/appkit/networks'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
@@ -29,11 +29,6 @@ export default defineNuxtPlugin((nuxtApp) => {
     ...AppKitNetwork[],
   ]
 
-  const transports: Record<number, ReturnType<typeof http>> = {}
-  for (const chainId of enabledChainIds) {
-    transports[chainId] = http(`/api/rpc/${chainId}`)
-  }
-
   const metadata = {
     name: envConfig.appTitle,
     description: envConfig.appDescription,
@@ -41,10 +36,15 @@ export default defineNuxtPlugin((nuxtApp) => {
     icons: normalizedAppUrl ? [`${normalizedAppUrl}/manifest-img.png`] : [],
   }
 
+  const customRpcUrls: Record<string, { url: string }[]> = {}
+  for (const chainId of enabledChainIds) {
+    customRpcUrls[`eip155:${chainId}`] = [{ url: `/api/rpc/${chainId}` }]
+  }
+
   const wagmiAdapter = new WagmiAdapter({
     networks,
     projectId: projectId || '',
-    transports,
+    customRpcUrls,
   })
 
   createAppKit({
@@ -52,6 +52,9 @@ export default defineNuxtPlugin((nuxtApp) => {
     networks,
     projectId: projectId || '',
     metadata,
+    themeVariables: {
+      '--w3m-font-family': 'inherit',
+    },
   })
 
   nuxtApp.vueApp.use(WagmiPlugin, { config: wagmiAdapter.wagmiConfig })
