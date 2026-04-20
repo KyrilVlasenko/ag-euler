@@ -1,5 +1,5 @@
 import type { ComputedRef } from 'vue'
-import { useAccount } from '@wagmi/vue'
+import { useAccount, useConfig } from '@wagmi/vue'
 import { formatUnits, type Address, type Abi, zeroAddress } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { FixedPoint } from '~/utils/fixed-point'
@@ -86,6 +86,9 @@ export interface UseCollateralFormOptions {
   }) => SwapApiRequestInput | null
 
   getSwapOutputAsset: () => VaultAsset | undefined
+  /** Optional: input asset for swap flows. Used by the BPT adapter branch
+   *  to populate correct decimals/symbol on the synthetic quote's tokenIn. */
+  getSwapInputAsset?: () => VaultAsset | undefined
 
   reviewLabel: string
   reviewType: string
@@ -113,8 +116,11 @@ export const useCollateralForm = (options: UseCollateralFormOptions) => {
   const { runSimulation, simulationError, clearSimulationError } = useTxPlanSimulation()
   const { isReady: isVaultsReady } = useVaults()
   const { getOrFetch } = useVaultRegistry()
-  const { eulerLensAddresses, isReady: isEulerAddressesReady, loadEulerConfig } = useEulerAddresses()
+  const { eulerLensAddresses, eulerPeripheryAddresses, isReady: isEulerAddressesReady, loadEulerConfig } = useEulerAddresses()
   const { client: rpcClient } = useRpcClient()
+  const wagmiConfig = useConfig()
+  const { enableEnsoMultiply, bptAdapterConfig } = useDeployConfig()
+  const { buildAdapterSwapQuote } = useEnsoRoute()
 
   // --- Shared reactive state ---
   const isLoading = ref(false)
@@ -145,8 +151,22 @@ export const useCollateralForm = (options: UseCollateralFormOptions) => {
     getQuoteDiffPct: getSwapQuoteDiffPct,
     reset: resetSwapQuoteState,
     requestQuotes: requestSwapQuotes,
+    requestCustomQuote: requestSwapCustomQuote,
     selectProvider: selectSwapQuote,
   } = useSwapQuotesParallel({ amountField: 'amountOut', compare: 'max' })
+
+  // --- Adapter vault detection (zapIn direction only, supply mode) ---
+  // Vaults where DEX routing doesn't work and only the adapter zap can produce BPT.
+  const ADAPTER_ONLY_VAULTS = new Set([
+    '0x2067936155c7db57b1cdcf776b04b9678c245626', // AZND/AUSD/LOAZND
+  ])
+
+  const getAdapterEntryForVault = (vaultAddr: string): BptAdapterConfigEntry | null => {
+    if (!ADAPTER_ONLY_VAULTS.has(vaultAddr.toLowerCase())) return null
+    const entry = bptAdapterConfig[vaultAddr.toLowerCase()] || bptAdapterConfig[vaultAddr]
+    if (entry?.pool && entry?.wrapper && entry?.numTokens && enableEnsoMultiply) return entry
+    return null
+  }
 
   // --- Position/vault computeds ---
   const position = computed(() => getPositionBySubAccountIndex(+positionIndex))
@@ -364,6 +384,61 @@ export const useCollateralForm = (options: UseCollateralFormOptions) => {
       return
     }
 
+    // Balancer BPT adapter: supply mode, AUSD → BPT zapIn direction.
+    // Adapter-only collateral vaults can't be routed via standard DEX aggregators,
+    // so we build a synthetic quote targeting the BalancerBptAdapter directly.
+    const adapterEntry = options.mode === 'supply' && collateralVault.value
+      ? getAdapterEntryForVault(collateralVault.value.address)
+      : null
+    if (adapterEntry && eulerPeripheryAddresses.value?.swapper) {
+      const swapperAddr = eulerPeripheryAddresses.value.swapper as Address
+      const swapVerifierAddr = eulerPeripheryAddresses.value.swapVerifier as Address
+      const tokenOutAddr = collateralVault.value!.asset.address as Address
+      // Use params.amount (input-token decimals from the page's requestSwapQuoteParams),
+      // NOT inputAmountNano (which is in collateral-asset decimals — wrong for AUSD input).
+      const adapterInputAmount = params.amount
+      await requestSwapCustomQuote('balancer-adapter', async () => {
+        const deadline = Math.floor(Date.now() / 1000) + 1800
+        const { expectedBptOut, minBptOut } = await previewAdapterZapIn(
+          wagmiConfig,
+          adapterEntry,
+          adapterInputAmount,
+          swapSlippage.value,
+        )
+        const adapterCalldata = encodeAdapterZapIn(adapterEntry.tokenIndex, adapterInputAmount, minBptOut)
+        const quote = buildAdapterSwapQuote({
+          swapperAddress: swapperAddr,
+          swapVerifierAddress: swapVerifierAddr,
+          collateralVault: collateralVault.value!.address as Address,
+          borrowVault: zeroAddress as Address,
+          subAccount: subAccountAddr,
+          tokenIn: params.tokenIn as Address,
+          tokenOut: tokenOutAddr,
+          borrowAmount: adapterInputAmount,
+          adapterAddress: adapterEntry.adapter as Address,
+          adapterCalldata,
+          minAmountOut: minBptOut,
+          deadline,
+        })
+        // buildAdapterSwapQuote sets amountOut='0' and uses emptyToken metadata
+        // (decimals=18, symbol=''). Patch for correct UI rendering.
+        const inputAsset = options.getSwapInputAsset?.()
+        return {
+          ...quote,
+          amountOut: expectedBptOut.toString(),
+          tokenIn: inputAsset
+            ? { ...quote.tokenIn, decimals: Number(inputAsset.decimals), symbol: inputAsset.symbol }
+            : quote.tokenIn,
+        }
+      }, {
+        logContext: {
+          amount: amount.value,
+          slippage: swapSlippage.value,
+        },
+      })
+      return
+    }
+
     await requestSwapQuotes(params, {
       logContext: {
         amount: amount.value,
@@ -372,13 +447,26 @@ export const useCollateralForm = (options: UseCollateralFormOptions) => {
     })
   }, 500)
 
+  // Adapter-only vaults: restrict the asset selector to the collateral asset (no-swap path)
+  // + the borrow vault's asset (adapter zap input). Mirrors useBorrowForm.adapterAllowedTokens.
+  const adapterAllowedTokens = computed<VaultAsset[] | null>(() => {
+    if (options.mode !== 'supply' || !collateralVault.value) return null
+    const entry = getAdapterEntryForVault(collateralVault.value.address)
+    if (!entry) return null
+    const collAsset = collateralVault.value.asset
+    const borrowAsset = borrowVault.value?.asset
+    if (!collAsset || !borrowAsset) return null
+    return [collAsset, borrowAsset]
+  })
+
   const openSwapTokenSelector = (currentAddress?: string, onSelect?: (a: VaultAsset, meta?: SwapTokenSelectMeta) => void) => {
     modal.open(SwapTokenSelector, {
       props: {
         currentAssetAddress: currentAddress || asset.value?.address,
         onSelect: onSelect || (() => {}),
         mode: options.mode === 'withdraw' ? 'output' : 'input',
-        allowNativeCurrency: options.mode === 'supply',
+        allowNativeCurrency: options.mode === 'supply' && !adapterAllowedTokens.value,
+        allowedTokens: adapterAllowedTokens.value || undefined,
       },
     })
   }
@@ -404,9 +492,20 @@ export const useCollateralForm = (options: UseCollateralFormOptions) => {
     options.needsSwap.value && isVaultRestrictedByCountry(collateralVault.value?.address || ''),
   )
 
+  // Active asset decimals: switch to input-token decimals during swap so
+  // valueToNano(amount, ...) matches the effectiveBalance units. Mirrors
+  // useBorrowForm's borrowActiveAssetDecimals pattern.
+  const activeAssetDecimals = computed(() => {
+    if (options.needsSwap.value) {
+      const inputAsset = options.getSwapInputAsset?.()
+      if (inputAsset) return inputAsset.decimals
+    }
+    return asset.value?.decimals
+  })
+
   const isSubmitDisabled = computed(() => {
     if (!isConnected.value) return false
-    if (options.effectiveBalance.value < valueToNano(amount.value, asset.value?.decimals)) return true
+    if (options.effectiveBalance.value < valueToNano(amount.value, activeAssetDecimals.value)) return true
     if (isLoading.value || !(+amount.value) || !!estimatesError.value || isEstimatesLoading.value) return true
     if (options.needsSwap.value && !swapSelectedQuote.value) return true
     return false

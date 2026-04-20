@@ -130,6 +130,14 @@ const form = useCollateralForm({
   },
 })
 useOperationGuard(computed(() => [form.collateralVault.value?.address, form.borrowVault.value?.address].filter(Boolean)))
+
+const reviewWithdrawLabel = computed(() => {
+  if (needsSwap.value && form.swapQuoteCardsSorted.value.length > 0 && !form.swapSelectedProvider.value) {
+    return 'Select a Swap Route'
+  }
+  return form.submitLabel
+})
+
 const pairAssetsLabel = usePositionPairLabel(form.position)
 
 // Withdraw-specific computeds
@@ -353,7 +361,7 @@ watch(selectedOutputAsset, () => {
             :disabled="form.submitDisabled.value"
             :loading="form.isSubmitting.value || form.isPreparing.value"
           >
-            {{ form.submitLabel }}
+            {{ reviewWithdrawLabel }}
           </VaultFormSubmit>
         </div>
       </div>

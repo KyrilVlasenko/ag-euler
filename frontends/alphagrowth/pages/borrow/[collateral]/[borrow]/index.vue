@@ -18,8 +18,6 @@ import { useMultiplyForm } from '~/composables/borrow/useMultiplyForm'
 const router = useRouter()
 const route = useRoute()
 const modal = useModal()
-const reviewBorrowLabel = 'Review Borrow'
-const reviewMultiplyLabel = 'Review Multiply'
 const { getBorrowVaultPair, updateVault } = useVaults()
 const { address, isConnected } = useAccount()
 const { refreshAllPositions: _refreshAllPositions, depositPositions } = useEulerAccount()
@@ -157,6 +155,20 @@ const { guardWithPriceImpact: guardWithMultiplyPriceImpact } = usePriceImpactGat
 
 const { guardWithPriceImpact: guardWithBorrowSwapPriceImpact } = usePriceImpactGate({
   directPriceImpact: borrow.borrowSwapPriceImpact,
+})
+
+// --- Submit labels ---
+const reviewBorrowLabel = computed(() => {
+  if (borrow.borrowNeedsSwap?.value && borrow.borrowSwapQuoteCards?.value?.length > 0 && !borrow.borrowSwapSelectedProvider?.value) {
+    return 'Select a Swap Route'
+  }
+  return 'Review Borrow'
+})
+const reviewMultiplyLabel = computed(() => {
+  if (multiply.multiplyQuoteCardsSorted?.value?.length > 0 && !multiply.multiplySelectedProvider?.value) {
+    return 'Select a Swap Route'
+  }
+  return 'Review Multiply'
 })
 
 // --- Submit disabled ---

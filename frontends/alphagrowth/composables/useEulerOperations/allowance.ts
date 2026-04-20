@@ -75,11 +75,19 @@ export const createAllowanceHelpers = (ctx: OperationsContext, permit2: Permit2H
       return false
     }
 
+    // Probe slots in parallel batches for performance (avoids 500+ sequential RPC calls)
+    const BATCH_SIZE = 50
+    const allSlots: bigint[] = []
     for (let i = 0; i <= ALLOWANCE_MAX_SEQUENTIAL_SLOT; i++) {
-      if (await trySlot(BigInt(i))) return BigInt(i)
+      allSlots.push(BigInt(i))
     }
-    for (const slotIndex of ALLOWANCE_EXTRA_SLOT_CANDIDATES) {
-      if (await trySlot(slotIndex)) return slotIndex
+    allSlots.push(...ALLOWANCE_EXTRA_SLOT_CANDIDATES)
+
+    for (let batchStart = 0; batchStart < allSlots.length; batchStart += BATCH_SIZE) {
+      const batch = allSlots.slice(batchStart, batchStart + BATCH_SIZE)
+      const results = await Promise.all(batch.map(slotIndex => trySlot(slotIndex).then(found => ({ slotIndex, found }))))
+      const match = results.find(r => r.found)
+      if (match) return match.slotIndex
     }
 
     logWarn('resolveAllowanceSlotIndex', 'no slot found for token', { data: { token: tokenKey, owner, spender } })

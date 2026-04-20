@@ -40,7 +40,7 @@ const POOLS: ZapPool[] = [
   {
     id: 'pool2',
     name: 'sMON/WMON (Kintsu)',
-    collateralVault: '0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5',
+    collateralVault: '0x7ad9f09B431A4C5F4CbA809d449Fde842192f9ec',
     borrowAsset: '0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A',
     borrowAssetSymbol: 'WMON',
     borrowAssetDecimals: 18,
@@ -48,12 +48,12 @@ const POOLS: ZapPool[] = [
       { address: '0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A', symbol: 'WMON', decimals: 18 },
     ],
     routeType: 'enso',
-    bptAddress: '0x3475Ea1c3451a9a10Aeb51bd8836312175B88BAc',
+    bptAddress: '0x02b34a02db24179Ac2D77Ae20AA6215C7153E7f8',
   },
   {
     id: 'pool3',
     name: 'shMON/WMON (Fastlane)',
-    collateralVault: '0x6660195421557BC6803e875466F99A764ae49Ed7',
+    collateralVault: '0x7A81A1613D50ffF334027Aad76F2416368f6050f',
     borrowAsset: '0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A',
     borrowAssetSymbol: 'WMON',
     borrowAssetDecimals: 18,
@@ -61,12 +61,12 @@ const POOLS: ZapPool[] = [
       { address: '0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A', symbol: 'WMON', decimals: 18 },
     ],
     routeType: 'enso',
-    bptAddress: '0x150360c0eFd098A6426060Ee0Cc4a0444c4b4b68',
+    bptAddress: '0x340Fa62AE58e90473da64b0af622cdd6113106Cb',
   },
   {
     id: 'pool4',
     name: 'AZND/AUSD/LOAZND',
-    collateralVault: '0x175831aF06c30F2EA5EA1e3F5EBA207735Eb9F92',
+    collateralVault: '0x2067936155c7DB57b1cdCF776B04B9678c245626',
     borrowAsset: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a',
     borrowAssetSymbol: 'AUSD',
     borrowAssetDecimals: 6,
@@ -74,7 +74,7 @@ const POOLS: ZapPool[] = [
       { address: '0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a', symbol: 'AUSD', decimals: 6 },
     ],
     routeType: 'adapter',
-    bptAddress: '0xD328E74AdD15Ac98275737a7C1C884ddc951f4D3',
+    bptAddress: '0xbddb004A6c393C3F83BCCCF7F07eE9d409b214dE',
   },
 ]
 

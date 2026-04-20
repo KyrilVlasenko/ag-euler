@@ -4,6 +4,7 @@ import { nanoToValue } from '~/utils/crypto-utils'
 import type { Vault, SecuritizeVault } from '~/entities/vault'
 import { getCurrentLiquidationLTV, isLiquidationLTVRamping, getRampTimeRemaining } from '~/entities/vault'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
+import { HIDDEN_COLLATERAL_VAULTS } from '~/entities/hiddenCollateralVaults'
 
 const emits = defineEmits(['close'])
 const router = useRouter()
@@ -23,6 +24,7 @@ const allCollateralPairs = computed(() => {
 
   vault.collateralLTVs.forEach((ltv) => {
     if (getCurrentLiquidationLTV(ltv) <= 0n) return
+    if (HIDDEN_COLLATERAL_VAULTS.has(ltv.collateral.toLowerCase())) return
 
     const pairData = {
       borrowLTV: ltv.borrowLTV,

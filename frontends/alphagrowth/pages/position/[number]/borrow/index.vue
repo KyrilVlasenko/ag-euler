@@ -6,7 +6,7 @@ import { OperationReviewModal } from '#components'
 import { useToast } from '~/components/ui/composables/useToast'
 import { type BorrowVaultPair, getNetAPY, type VaultAsset } from '~/entities/vault'
 import { getUtilisationWarning, getBorrowCapWarning } from '~/composables/useVaultWarnings'
-import { getAssetUsdValueOrZero, getAssetOraclePrice, getCollateralOraclePrice, conservativePriceRatio } from '~/services/pricing/priceProvider'
+import { getAssetUsdValueOrZero, getCollateralUsdValueOrZero, getAssetOraclePrice, getCollateralOraclePrice, conservativePriceRatio } from '~/services/pricing/priceProvider'
 import { getTotalCollateralValue } from '~/utils/position-estimates'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
 import { isAnyVaultBlockedByCountry, isVaultRestrictedByCountry } from '~/composables/useGeoBlock'
@@ -177,7 +177,7 @@ const load = async () => {
       : (Number(pair.value?.liquidationLTV || 0n) / 100) / currentLtvFloat
     currentLiquidationPrice.value = currentHealth.value < 0.1 ? Infinity : priceFixed.value.toUnsafeFloat() / currentHealth.value
     const [collUsd, borUsd] = await Promise.all([
-      getAssetUsdValueOrZero(position.value!.supplied || 0, collateralVault.value!, 'off-chain'),
+      getCollateralUsdValueOrZero(position.value!.supplied || 0n, borrowVault.value!, collateralVault.value!, 'off-chain'),
       getAssetUsdValueOrZero(position.value!.borrowed || 0, borrowVault.value!, 'off-chain'),
     ])
     currentNetAPY.value = getNetAPY(
@@ -354,7 +354,7 @@ const updateEstimates = useDebounceFn(async () => {
     const existingBorrow = nanoToValue(position.value?.borrowed || 0n, borrowVault.value!.decimals)
     const totalBorrow = existingBorrow + (+borrowAmount.value || 0)
     const [collateralUsd, borrowUsd] = await Promise.all([
-      getAssetUsdValueOrZero(+collateralAmount.value || 0, collateralVault.value!, 'off-chain'),
+      getCollateralUsdValueOrZero(position.value?.supplied || 0n, borrowVault.value!, collateralVault.value!, 'off-chain'),
       getAssetUsdValueOrZero(totalBorrow, borrowVault.value!, 'off-chain'),
     ])
     netAPY.value = getNetAPY(

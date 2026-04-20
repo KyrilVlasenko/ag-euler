@@ -23,8 +23,8 @@ interface EnvConfig {
 }
 
 const DEFAULTS: EnvConfig = {
-  appTitle: 'Euler Lite',
-  appDescription: 'Lightweight interface for Euler Finance lending and borrowing.',
+  appTitle: 'AlphaGrowth Vaults',
+  appDescription: 'All AlphaGrowth curated Euler vaults in one place.',
   logoUrl: '',
   pythHermesUrl: '',
   appKitProjectId: '',

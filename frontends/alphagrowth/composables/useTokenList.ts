@@ -146,7 +146,9 @@ const tokenIconOverrides = new Map(
 )
 
 export const getAssetLogoUrl = (address: string, symbol: string): string => {
-  return tokenIconOverrides.get(symbol.toLowerCase())
+  const key = symbol.toLowerCase()
+  return tokenIconOverrides.get(key)
+    ?? tokenIconOverrides.get(key.replace(/\s+/g, '_'))
     ?? getTokenListLogoUrl(address)
     ?? ''
 }

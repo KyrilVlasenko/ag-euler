@@ -97,6 +97,13 @@ const {
   selectProvider: selectSwapQuote,
 } = useSwapQuotesParallel({ amountField: 'amountOut', compare: 'max' })
 
+const reviewWithdrawLabel = computed(() => {
+  if (needsSwap.value && swapQuoteCardsSorted.value.length > 0 && !swapSelectedProvider.value) {
+    return 'Select a Swap Route'
+  }
+  return 'Review Withdraw'
+})
+
 const rewardApy = computed(() => getSupplyRewardApy(vault.value?.address || ''))
 const amountFixed = computed(() => {
   return FixedPoint.fromValue(
@@ -109,7 +116,7 @@ const isSubmitDisabled = computed(() => {
   if (assetsBalance.value < amountFixed.value.value) return true
   if (isLoading.value || amountFixed.value.isZero() || amountFixed.value.isNegative()) return true
   if (estimatesError.value) return true
-  if (needsSwap.value && !swapEffectiveQuote.value && !isSwapQuoteLoading.value) return true
+  if (needsSwap.value && !swapSelectedQuote.value) return true
   return false
 })
 const reviewWithdrawDisabled = isSubmitDisabled
@@ -650,7 +657,7 @@ watch(swapSelectedQuote, () => {
             :loading="isSubmitting || isPreparing"
             :disabled="reviewWithdrawDisabled"
           >
-            Review Withdraw
+            {{ reviewWithdrawLabel }}
           </VaultFormSubmit>
         </div>
       </div>

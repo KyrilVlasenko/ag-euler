@@ -6,6 +6,7 @@ import type { LTVRampConfig } from '~/entities/vault/ltv'
 import { getCurrentLiquidationLTV, isLiquidationLTVRamping } from '~/entities/vault'
 import { useModal } from '~/components/ui/composables/useModal'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
+import { HIDDEN_COLLATERAL_VAULTS } from '~/entities/hiddenCollateralVaults'
 import { VaultRampDownModal } from '#components'
 
 const modal = useModal()
@@ -40,6 +41,7 @@ const allCollateralPairs = computed(() => {
 
   vault.collateralLTVs.forEach((ltv) => {
     if (getCurrentLiquidationLTV(ltv) <= 0n) return
+    if (HIDDEN_COLLATERAL_VAULTS.has(ltv.collateral.toLowerCase())) return
 
     // Try to find the collateral vault from registry
     const collateralEntry = registryGet(ltv.collateral)

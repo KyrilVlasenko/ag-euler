@@ -106,7 +106,7 @@ export default defineNuxtConfig({
       configAppTitle: 'AlphaGrowth Vaults',
       configAppDescription: 'All AlphaGrowth curated Euler vaults in one place',
       configLabelsRepo: 'alphagrowth/ag-euler-balancer-labels',
-      configLabelsRepoBranch: 'master',
+      configLabelsRepoBranch: 'main',
       configOracleChecksRepo: 'euler-xyz/oracle-checks',
       configLabelsBaseUrl: '',
       configOracleChecksBaseUrl: '',

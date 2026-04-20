@@ -1,5 +1,5 @@
 import type { Ref, ComputedRef } from 'vue'
-import { useAccount } from '@wagmi/vue'
+import { useAccount, useConfig } from '@wagmi/vue'
 import { formatUnits, type Address } from 'viem'
 import { logWarn } from '~/utils/errorHandling'
 import { normalizeAddressOrEmpty } from '~/utils/accountPositionHelpers'
@@ -14,6 +14,8 @@ import {
 import {
   getAssetUsdValue,
   getAssetUsdValueOrZero,
+  getCollateralUsdValue,
+  getCollateralUsdValueOrZero,
   getAssetOraclePrice,
   getCollateralOraclePrice,
   getCollateralShareOraclePrice,
@@ -32,6 +34,7 @@ import { isOperationBlocked } from '~/utils/operationGuardRegistry'
 import { useMultiplyCollateralOptions } from '~/composables/useMultiplyCollateralOptions'
 import { useSwapQuotesParallel } from '~/composables/useSwapQuotesParallel'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
+import { useEnsoRoute, encodeAdapterZapIn, previewAdapterZapIn, type BptAdapterConfigEntry } from '~/composables/useEnsoRoute'
 
 type MultiplyPlanParams = {
   supplyVaultAddress: string
@@ -79,12 +82,15 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
   const modal = useModal()
   const { error } = useToast()
   const { buildMultiplyPlan, executeTxPlan } = useEulerOperations()
+  const wagmiConfig = useConfig()
   const { address, isConnected } = useAccount()
   const { refreshAllPositions, depositPositions } = useEulerAccount()
-  const { eulerLensAddresses } = useEulerAddresses()
+  const { eulerLensAddresses, eulerPeripheryAddresses, chainId: currentChainId } = useEulerAddresses()
   const { fetchSingleBalance } = useWallets()
   const { getSupplyRewardApy, getBorrowRewardApy } = useRewardsApy()
   const { withIntrinsicBorrowApy, withIntrinsicSupplyApy } = useIntrinsicApy()
+  const { enableEnsoMultiply, bptAdapterConfig } = useDeployConfig()
+  const { getEnsoRoute, buildEnsoSwapQuote, buildAdapterSwapQuote } = useEnsoRoute()
   const {
     runSimulation: runMultiplySimulation,
     simulationError: multiplySimulationError,
@@ -112,6 +118,7 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
     getQuoteDiffPct,
     reset: resetMultiplyQuoteStateInternal,
     requestQuotes: requestMultiplyQuotes,
+    requestCustomQuote: requestMultiplyCustomQuote,
     selectProvider: selectMultiplyQuote,
   } = useSwapQuotesParallel({ amountField: 'amountOut', compare: 'max' })
 
@@ -247,7 +254,19 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
       multiplySupplyValueUsd.value = null
       return
     }
-    multiplySupplyValueUsd.value = await getAssetUsdValueOrZero(multiplySupplyAmountNano.value, multiplySupplyVault.value, 'off-chain')
+    // Try asset pricing first, fall back to collateral pricing via borrow vault's oracle
+    // (collateral-only vaults have no oracle for their own asset)
+    const assetUsd = await getAssetUsdValue(multiplySupplyAmountNano.value, multiplySupplyVault.value, 'off-chain')
+    if (assetUsd !== undefined && assetUsd > 0) {
+      multiplySupplyValueUsd.value = assetUsd
+      return
+    }
+    if (multiplyShortVault.value) {
+      multiplySupplyValueUsd.value = await getCollateralUsdValueOrZero(multiplySupplyAmountNano.value, multiplyShortVault.value, multiplySupplyVault.value, 'off-chain')
+    }
+    else {
+      multiplySupplyValueUsd.value = 0
+    }
   })
 
   watchEffect(async () => {
@@ -255,7 +274,18 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
       multiplyLongValueUsd.value = null
       return
     }
-    multiplyLongValueUsd.value = await getAssetUsdValueOrZero(multiplySwapAmountOut.value, multiplyLongVault.value, 'off-chain')
+    // Try asset pricing first, fall back to collateral pricing via borrow vault's oracle
+    const assetUsd = await getAssetUsdValue(multiplySwapAmountOut.value, multiplyLongVault.value, 'off-chain')
+    if (assetUsd !== undefined && assetUsd > 0) {
+      multiplyLongValueUsd.value = assetUsd
+      return
+    }
+    if (multiplyShortVault.value) {
+      multiplyLongValueUsd.value = await getCollateralUsdValueOrZero(multiplySwapAmountOut.value, multiplyShortVault.value, multiplyLongVault.value, 'off-chain')
+    }
+    else {
+      multiplyLongValueUsd.value = 0
+    }
   })
 
   watchEffect(async () => {
@@ -423,7 +453,10 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
     const shortVault = multiplyShortVault.value
     const longVault = multiplyLongVault.value
     const amountInUsd = await getAssetUsdValue(swapIn, shortVault, 'off-chain')
-    const amountOutUsd = await getAssetUsdValue(swapOut, longVault, 'off-chain')
+    let amountOutUsd = await getAssetUsdValue(swapOut, longVault, 'off-chain')
+    if (!amountOutUsd) {
+      amountOutUsd = await getCollateralUsdValue(swapOut, shortVault, longVault, 'off-chain')
+    }
     if (!amountInUsd || !amountOutUsd) {
       multiplyPriceImpact.value = null
       return
@@ -530,31 +563,112 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
     }
 
     setMultiplyAmounts(null, null)
-    const requestParams = {
-      tokenIn: multiplyShortVault.value.asset.address as Address,
-      tokenOut: multiplyLongVault.value.asset.address as Address,
-      accountIn: account,
-      accountOut: account,
-      amount: debtAmount,
-      vaultIn: multiplyShortVault.value.address as Address,
-      receiver: multiplyLongVault.value.address as Address,
+
+    const logContext = {
+      fromVault: multiplyShortVault.value?.address,
+      toVault: multiplyLongVault.value?.address,
+      amount: formatUnits(debtAmount, Number(multiplyShortVault.value.asset.decimals)),
       slippage: multiplySlippage.value,
       swapperMode: SwapperMode.EXACT_IN,
       isRepay: false,
-      targetDebt: 0n,
-      currentDebt: 0n,
     }
-    await requestMultiplyQuotes(requestParams, {
-      errorMessage: 'Unable to fetch a swap quote. Please adjust the amount or select a different asset to try again.',
-      logContext: {
-        fromVault: multiplyShortVault.value?.address,
-        toVault: multiplyLongVault.value?.address,
-        amount: formatUnits(debtAmount, Number(multiplyShortVault.value.asset.decimals)),
+
+    if (enableEnsoMultiply && eulerPeripheryAddresses.value?.swapper && currentChainId.value) {
+      const swapperAddr = eulerPeripheryAddresses.value.swapper as Address
+      const swapVerifierAddr = eulerPeripheryAddresses.value.swapVerifier as Address
+      const tokenIn = multiplyShortVault.value.asset.address as Address
+      const tokenOut = multiplyLongVault.value.asset.address as Address
+      const borrowVaultAddr = multiplyShortVault.value.address as Address
+      const collateralVaultAddr = multiplyLongVault.value.address as Address
+      const chainId = currentChainId.value
+      // Only use adapter for vaults where DEX routing doesn't work
+      const ADAPTER_ONLY_VAULTS = new Set([
+        '0x2067936155c7db57b1cdcf776b04b9678c245626', // AZND/AUSD/LOAZND
+      ])
+      const adapterEntry = ADAPTER_ONLY_VAULTS.has(collateralVaultAddr.toLowerCase())
+        ? (bptAdapterConfig[collateralVaultAddr.toLowerCase()] || bptAdapterConfig[collateralVaultAddr])
+        : null
+
+      if (adapterEntry && adapterEntry.pool && adapterEntry.wrapper && adapterEntry.numTokens) {
+        await requestMultiplyCustomQuote('balancer-adapter', async () => {
+          const deadline = Math.floor(Date.now() / 1000) + 1800
+          const fullEntry = adapterEntry as BptAdapterConfigEntry
+          const { expectedBptOut, minBptOut } = await previewAdapterZapIn(
+            wagmiConfig,
+            fullEntry,
+            debtAmount,
+            multiplySlippage.value,
+          )
+          const adapterCalldata = encodeAdapterZapIn(fullEntry.tokenIndex, debtAmount, minBptOut)
+
+          const quote = buildAdapterSwapQuote({
+            swapperAddress: swapperAddr,
+            swapVerifierAddress: swapVerifierAddr,
+            collateralVault: collateralVaultAddr,
+            borrowVault: borrowVaultAddr,
+            subAccount: account,
+            tokenIn,
+            tokenOut,
+            borrowAmount: debtAmount,
+            deadline,
+            adapterAddress: fullEntry.adapter as Address,
+            adapterCalldata,
+            minAmountOut: minBptOut,
+          })
+
+          quote.amountOut = expectedBptOut.toString()
+          quote.amountOutMin = minBptOut.toString()
+          return quote
+        }, { logContext })
+      }
+      else {
+        await requestMultiplyCustomQuote('enso', async () => {
+          const ensoRoute = await getEnsoRoute({
+            chainId,
+            fromAddress: swapperAddr,
+            tokenIn,
+            tokenOut,
+            amountIn: debtAmount,
+            receiver: swapperAddr,
+            slippage: multiplySlippage.value,
+          })
+
+          const deadline = Math.floor(Date.now() / 1000) + 1800
+
+          return buildEnsoSwapQuote(ensoRoute, {
+            swapperAddress: swapperAddr,
+            swapVerifierAddress: swapVerifierAddr,
+            collateralVault: collateralVaultAddr,
+            borrowVault: borrowVaultAddr,
+            subAccount: account,
+            tokenIn,
+            tokenOut,
+            borrowAmount: debtAmount,
+            deadline,
+          })
+        }, { logContext })
+      }
+    }
+    else {
+      const requestParams = {
+        tokenIn: multiplyShortVault.value.asset.address as Address,
+        tokenOut: multiplyLongVault.value.asset.address as Address,
+        accountIn: account,
+        accountOut: account,
+        amount: debtAmount,
+        vaultIn: multiplyShortVault.value.address as Address,
+        receiver: multiplyLongVault.value.address as Address,
         slippage: multiplySlippage.value,
         swapperMode: SwapperMode.EXACT_IN,
         isRepay: false,
-      },
-    })
+        targetDebt: 0n,
+        currentDebt: 0n,
+      }
+      await requestMultiplyQuotes(requestParams, {
+        errorMessage: 'Unable to fetch a swap quote. Please adjust the amount or select a different asset to try again.',
+        logContext,
+      })
+    }
   }, 500)
 
   // --- Helpers ---

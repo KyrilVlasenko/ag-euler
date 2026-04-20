@@ -61,7 +61,6 @@ const router = useRouter()
 const route = useRoute()
 const modal = useModal()
 const { error } = useToast()
-const reviewSupplyLabel = 'Review Supply'
 const { buildSupplyPlan, buildSwapAndSupplyPlan, executeTxPlan } = useEulerOperations()
 const { getVault, getSecuritizeVault, getEscrowVault, updateVault, isEscrowLoadedOnce } = useVaults()
 const { get: registryGet, getVault: _registryGetVault, isKnownEscrowAddress } = useVaultRegistry()
@@ -123,6 +122,13 @@ const {
   requestQuotes: requestSwapQuotes,
   selectProvider: selectSwapQuote,
 } = useSwapQuotesParallel({ amountField: 'amountOut', compare: 'max' })
+
+const reviewSupplyLabel = computed(() => {
+  if (needsSwap.value && swapQuoteCardsSorted.value.length > 0 && !swapSelectedProvider.value) {
+    return 'Select a Swap Route'
+  }
+  return 'Review Supply'
+})
 
 // Vault data - only one will be populated based on type
 const evkVault: Ref<Vault | undefined> = ref(undefined)

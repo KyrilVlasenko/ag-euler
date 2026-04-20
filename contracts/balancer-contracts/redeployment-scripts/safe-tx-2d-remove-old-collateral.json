@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "chainId": "143",
+  "createdAt": 1776294706,
+  "meta": {
+    "name": "Step 2D: Remove old collateral vaults from WMON borrow vault",
+    "description": "setLTV to 0 on old Kintsu and old Fastlane collateral vaults. Old AZND already handled in a separate Safe tx."
+  },
+  "transactions": [
+    {
+      "to": "0x75B6C392f778B8BCf9bdB676f8F128b4dD49aC19",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "name": "collateral", "type": "address", "internalType": "address" },
+          { "name": "borrowLTV", "type": "uint16", "internalType": "uint16" },
+          { "name": "liquidationLTV", "type": "uint16", "internalType": "uint16" },
+          { "name": "rampDuration", "type": "uint32", "internalType": "uint32" }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x578c60e6Df60336bE41b316FDE74Aa3E2a4E0Ea5",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x75B6C392f778B8BCf9bdB676f8F128b4dD49aC19",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "name": "collateral", "type": "address", "internalType": "address" },
+          { "name": "borrowLTV", "type": "uint16", "internalType": "uint16" },
+          { "name": "liquidationLTV", "type": "uint16", "internalType": "uint16" },
+          { "name": "rampDuration", "type": "uint32", "internalType": "uint32" }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x6660195421557BC6803e875466F99A764ae49Ed7",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    }
+  ]
+}

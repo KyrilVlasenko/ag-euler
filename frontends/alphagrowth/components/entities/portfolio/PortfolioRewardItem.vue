@@ -7,6 +7,16 @@ import type { TxPlan } from '~/entities/txPlan'
 import { logWarn } from '~/utils/errorHandling'
 import { formatNumber, formatUsdValue } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
+import { getAssetLogoUrl } from '~/composables/useTokens'
+
+const rewardIconOverrides: Record<string, string> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob('~/assets/tokens/*', { eager: true, query: '?url', import: 'default' }),
+  ).map(([path, url]) => {
+    const name = path.split('/').pop()?.split('.')[0]?.toLowerCase() ?? ''
+    return [name, url as string]
+  }),
+)
 
 const { reward } = defineProps<{ reward: Reward }>()
 
@@ -32,7 +42,15 @@ const externalIconUrl = computed(() => {
   return rewardTokens.value.find(token => token.address === reward.token.address)?.icon
     || undefined
 })
-const hasIcon = computed(() => isEulFamily.value || !!externalIconUrl.value)
+const localIconUrl = computed(() => {
+  const symbol = reward.token.symbol.toLowerCase()
+  if (rewardIconOverrides[symbol]) return rewardIconOverrides[symbol]
+  const firstWord = symbol.split(' ')[0]
+  if (firstWord !== symbol && rewardIconOverrides[firstWord]) return rewardIconOverrides[firstWord]
+  return getAssetLogoUrl(reward.token.address, reward.token.symbol)
+})
+const resolvedIconUrl = computed(() => localIconUrl.value || externalIconUrl.value || undefined)
+const hasIcon = computed(() => isEulFamily.value || !!resolvedIconUrl.value)
 const avatarAsset = computed(() => isEulFamily.value
   ? { address: reward.token.address, symbol: 'EUL' }
   : { address: reward.token.address, symbol: reward.token.symbol },
@@ -125,7 +143,7 @@ const onClaimClick = async () => {
         <AssetAvatar
           v-if="hasIcon"
           :asset="avatarAsset"
-          :icon-url="externalIconUrl"
+          :icon-url="resolvedIconUrl"
           size="40"
           :increased-spacing="true"
         />

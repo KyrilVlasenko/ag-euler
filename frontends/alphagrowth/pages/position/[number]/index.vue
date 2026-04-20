@@ -1131,6 +1131,8 @@ watch([isConnected, isSpyMode], () => {
                 >
                   Withdraw
                 </UiButton>
+                <!-- Collateral swap hidden: BPT-to-BPT routing not supported by available DEX providers -->
+                <!--
                 <UiButton
                   size="medium"
                   variant="primary-stroke"
@@ -1140,6 +1142,7 @@ watch([isConnected, isSpyMode], () => {
                 >
                   Swap collateral
                 </UiButton>
+                -->
               </div>
               <div
                 v-else

@@ -1,6 +1,7 @@
 import type { Ref, ComputedRef } from 'vue'
-import { useAccount } from '@wagmi/vue'
+import { useAccount, useConfig } from '@wagmi/vue'
 import { getAddress, formatUnits, zeroAddress, type Address } from 'viem'
+import { useEnsoRoute, encodeAdapterZapIn, previewAdapterZapIn, type BptAdapterConfigEntry } from '~/composables/useEnsoRoute'
 import { isNativeCurrencyAddress, isNativeOfWrapped, resolveWrappedNativeAddress, resolveWrappedNativeAsset } from '~/utils/native-currency'
 import { logWarn } from '~/utils/errorHandling'
 import { computeNextHealth, computeLiquidationPrice } from '~/utils/repayUtils'
@@ -17,6 +18,7 @@ import {
 } from '~/entities/vault'
 import {
   getAssetUsdValueOrZero,
+  getCollateralUsdValueOrZero,
   getAssetOraclePrice,
   getCollateralOraclePrice,
   getCollateralUsdPrice,
@@ -91,9 +93,12 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
   const { buildBorrowPlan, buildBorrowBySavingPlan, buildSwapAndBorrowPlan, executeTxPlan } = useEulerOperations()
   const { address, isConnected } = useAccount()
   const { refreshAllPositions } = useEulerAccount()
-  const { eulerLensAddresses, chainId } = useEulerAddresses()
+  const { eulerLensAddresses, eulerPeripheryAddresses, chainId } = useEulerAddresses()
   const { updateVault } = useVaults()
   const { fetchSingleBalance } = useWallets()
+  const wagmiConfig = useConfig()
+  const { enableEnsoMultiply, bptAdapterConfig } = useDeployConfig()
+  const { buildAdapterSwapQuote } = useEnsoRoute()
 
   const {
     runSimulation: runBorrowSimulation,
@@ -122,6 +127,7 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
     getQuoteDiffPct: getBorrowSwapQuoteDiffPct,
     reset: resetBorrowSwapQuoteState,
     requestQuotes: requestBorrowSwapQuotes,
+    requestCustomQuote: requestBorrowSwapCustomQuote,
     selectProvider: selectBorrowSwapQuote,
   } = useSwapQuotesParallel({ amountField: 'amountOut', compare: 'max' })
 
@@ -170,6 +176,18 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
     collateralUnitPrice.value = nanoToValue(priceInfo.amountOutMid, 18)
   })
 
+  // Try asset pricing first, fall back to collateral pricing via borrow vault's oracle
+  // (collateral-only vaults have no oracle for their own asset)
+  const getCollateralUsdWithFallback = async (amount: number | bigint, vault: Vault): Promise<number> => {
+    const assetUsd = await getAssetUsdValueOrZero(amount, vault, 'off-chain')
+    if (assetUsd > 0) return assetUsd
+    if (borrowVault.value) {
+      const nanoAmount = typeof amount === 'bigint' ? amount : valueToNano(String(amount), vault.asset.decimals)
+      return getCollateralUsdValueOrZero(nanoAmount, borrowVault.value, vault, 'off-chain')
+    }
+    return 0
+  }
+
   // Reactive collateral option prices
   const walletCollateralPriceUsd = ref(0)
   const savingCollateralPriceUsd = ref(0)
@@ -180,9 +198,9 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
       savingCollateralPriceUsd.value = 0
       return
     }
-    walletCollateralPriceUsd.value = await getAssetUsdValueOrZero(balance.value, collateralVault.value, 'off-chain')
+    walletCollateralPriceUsd.value = await getCollateralUsdWithFallback(balance.value, collateralVault.value)
     if (savingCollateral.value) {
-      savingCollateralPriceUsd.value = await getAssetUsdValueOrZero(savingCollateral.value.assets, collateralVault.value, 'off-chain')
+      savingCollateralPriceUsd.value = await getCollateralUsdWithFallback(savingCollateral.value.assets, collateralVault.value)
     }
     else {
       savingCollateralPriceUsd.value = 0
@@ -364,22 +382,31 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
     ]
   })
 
+  // --- Adapter vault detection ---
+  // Vaults where DEX routing doesn't work and only the adapter zap can produce BPT.
+  // The Stableswap vault (0x5795...) works via Enso DEX routing so it's not adapter-only.
+  const ADAPTER_ONLY_VAULTS = new Set([
+    '0x2067936155c7db57b1cdcf776b04b9678c245626', // AZND/AUSD/LOAZND
+  ])
+
+  const getAdapterEntryForVault = (vaultAddr: string) => {
+    if (!ADAPTER_ONLY_VAULTS.has(vaultAddr.toLowerCase())) return null
+    const entry = bptAdapterConfig[vaultAddr.toLowerCase()] || bptAdapterConfig[vaultAddr]
+    if (entry?.pool && entry?.wrapper && entry?.numTokens && enableEnsoMultiply) return entry
+    return null
+  }
+
+  const isAdapterVault = computed(() => {
+    if (!collateralVault.value) return false
+    return !!getAdapterEntryForVault(collateralVault.value.address)
+  })
+
   // --- Swap quote ---
   const requestBorrowSwapQuote = useDebounceFn(async () => {
     borrowSwapQuoteError.value = null
 
     if (!borrowSelectedAsset.value || !collateralVault.value || !borrowNeedsSwap.value || !collateralAmount.value) {
       resetBorrowSwapQuoteState()
-      return
-    }
-
-    // Adapter-routed BPT vaults don't support swap-to-supply via DEX routes
-    const ADAPTER_ONLY_VAULTS = new Set([
-      '0x175831aF06c30F2EA5EA1e3F5EBA207735Eb9F92'.toLowerCase(),
-    ])
-    if (ADAPTER_ONLY_VAULTS.has(collateralVault.value.address.toLowerCase())) {
-      resetBorrowSwapQuoteState()
-      borrowSwapQuoteError.value = 'Swapping into this collateral is not supported. Please use the Zap BPT page to convert your tokens into BPT first, then deposit directly.'
       return
     }
 
@@ -396,28 +423,68 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
     const swapTokenIn = isNativeCurrencyAddress(borrowSelectedAsset.value.address)
       ? resolveWrappedNativeAddress(chainId.value!) || borrowSelectedAsset.value.address
       : borrowSelectedAsset.value.address
-    await requestBorrowSwapQuotes({
-      tokenIn: swapTokenIn as Address,
-      tokenOut: collateralVault.value.asset.address as Address,
-      accountIn: zeroAddress as Address,
-      accountOut: subAccountAddr,
-      amount: inputAmountNano,
-      vaultIn: zeroAddress as Address,
-      receiver: collateralVault.value.address as Address,
-      unusedInputReceiver: userAddr,
+
+    const logContext = {
+      tokenIn: borrowSelectedAsset.value.address,
+      tokenOut: collateralVault.value.asset.address,
+      amount: collateralAmount.value,
       slippage: borrowSwapSlippage.value,
-      swapperMode: SwapperMode.EXACT_IN,
-      isRepay: false,
-      targetDebt: 0n,
-      currentDebt: 0n,
-    }, {
-      logContext: {
-        tokenIn: borrowSelectedAsset.value.address,
-        tokenOut: collateralVault.value.asset.address,
-        amount: collateralAmount.value,
+    }
+
+    // Use adapter for BPT vaults when input token is the adapter's expected asset
+    const adapterEntry = getAdapterEntryForVault(collateralVault.value.address)
+    if (adapterEntry && eulerPeripheryAddresses.value?.swapper) {
+      const swapperAddr = eulerPeripheryAddresses.value.swapper as Address
+      const swapVerifierAddr = eulerPeripheryAddresses.value.swapVerifier as Address
+
+      await requestBorrowSwapCustomQuote('balancer-adapter', async () => {
+        const deadline = Math.floor(Date.now() / 1000) + 1800
+        const fullEntry = adapterEntry as BptAdapterConfigEntry
+        const { expectedBptOut, minBptOut } = await previewAdapterZapIn(
+          wagmiConfig,
+          fullEntry,
+          inputAmountNano,
+          borrowSwapSlippage.value,
+        )
+        const adapterCalldata = encodeAdapterZapIn(fullEntry.tokenIndex, inputAmountNano, minBptOut)
+
+        const quote = buildAdapterSwapQuote({
+          swapperAddress: swapperAddr,
+          swapVerifierAddress: swapVerifierAddr,
+          collateralVault: collateralVault.value!.address as Address,
+          borrowVault: zeroAddress as Address,
+          subAccount: subAccountAddr,
+          tokenIn: swapTokenIn as Address,
+          tokenOut: collateralVault.value!.asset.address as Address,
+          borrowAmount: inputAmountNano,
+          deadline,
+          adapterAddress: fullEntry.adapter as Address,
+          adapterCalldata,
+          minAmountOut: minBptOut,
+        })
+
+        quote.amountOut = expectedBptOut.toString()
+        quote.amountOutMin = minBptOut.toString()
+        return quote
+      }, { logContext })
+    }
+    else {
+      await requestBorrowSwapQuotes({
+        tokenIn: swapTokenIn as Address,
+        tokenOut: collateralVault.value.asset.address as Address,
+        accountIn: zeroAddress as Address,
+        accountOut: subAccountAddr,
+        amount: inputAmountNano,
+        vaultIn: zeroAddress as Address,
+        receiver: collateralVault.value.address as Address,
+        unusedInputReceiver: userAddr,
         slippage: borrowSwapSlippage.value,
-      },
-    })
+        swapperMode: SwapperMode.EXACT_IN,
+        isRepay: false,
+        targetDebt: 0n,
+        currentDebt: 0n,
+      }, { logContext })
+    }
   }, 500)
 
   // --- Actions: swap token selection ---
@@ -431,12 +498,19 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
     resetBorrowSwapQuoteState()
   }
 
+  // For adapter vaults, restrict the token list to the collateral asset + borrow asset (for zap)
+  const adapterAllowedTokens = computed(() => {
+    if (!isAdapterVault.value || !borrowVault.value?.asset || !collateralVault.value?.asset) return null
+    return [collateralVault.value.asset, borrowVault.value.asset]
+  })
+
   const openBorrowSwapTokenSelector = () => {
     modal.open(SwapTokenSelector, {
       props: {
         currentAssetAddress: borrowSelectedAsset.value?.address || collateralVault.value?.asset.address,
         onSelect: onSelectBorrowSwapAsset,
-        allowNativeCurrency: true,
+        allowNativeCurrency: !isAdapterVault.value,
+        allowedTokens: adapterAllowedTokens.value || undefined,
       },
     })
   }
@@ -505,7 +579,7 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
       ) ?? undefined
       const collateralUsdValue = borrowNeedsSwap.value && borrowSwapAssetUsdPrice.value
         ? (+collateralAmount.value || 0) * borrowSwapAssetUsdPrice.value
-        : await getAssetUsdValueOrZero(+collateralAmount.value || 0, collateralVault.value!, 'off-chain')
+        : await getCollateralUsdWithFallback(+collateralAmount.value || 0, collateralVault.value!)
       const borrowUsdValue = await getAssetUsdValueOrZero(+borrowAmount.value || 0, borrowVault.value!, 'off-chain')
       netAPY.value = getNetAPY(
         collateralUsdValue,
@@ -905,6 +979,7 @@ export const useBorrowForm = (options: UseBorrowFormOptions) => {
 
     // Unknown token warning
     isUnknownBorrowSwapToken,
+    isAdapterVault,
 
     // Display
     collateralUnitPrice,

@@ -207,7 +207,12 @@ const formTabs = computed(() => {
 })
 
 // --- Submit ---
-const reviewRepayLabel = 'Review Repay'
+const reviewRepayLabel = computed(() => {
+  if (walletSwap.needsSwap.value && walletSwap.quotes.sortedQuoteCards.value.length > 0 && !walletSwap.quotes.selectedProvider.value) {
+    return 'Select a Swap Route'
+  }
+  return 'Review Repay'
+})
 const reviewRepayDisabled = computed(() => {
   if (formTab.value === 'wallet') {
     return walletSwap.needsSwap.value

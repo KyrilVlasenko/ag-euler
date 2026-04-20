@@ -137,6 +137,7 @@ const form = useCollateralForm({
   },
 
   getSwapOutputAsset: () => form.asset.value,
+  getSwapInputAsset: () => selectedAsset.value,
 
   reviewLabel: 'Review Supply',
   reviewType: 'supply',
@@ -155,6 +156,13 @@ const form = useCollateralForm({
   onAfterLoad: () => updateBalance(),
 })
 useOperationGuard(computed(() => [form.collateralVault.value?.address].filter(Boolean)))
+
+const reviewSupplyLabel = computed(() => {
+  if (needsSwap.value && form.swapQuoteCardsSorted.value.length > 0 && !form.swapSelectedProvider.value) {
+    return 'Select a Swap Route'
+  }
+  return form.submitLabel
+})
 
 const balanceFixed = computed(() => FixedPoint.fromValue(balance.value, form.collateralVault.value?.decimals || 18))
 const assets = computed(() => [form.asset.value].filter((v): v is VaultAsset => !!v))
@@ -410,7 +418,7 @@ watch(selectedAsset, async () => {
             :disabled="form.submitDisabled.value"
             :loading="form.isSubmitting.value || form.isPreparing.value"
           >
-            {{ form.submitLabel }}
+            {{ reviewSupplyLabel }}
           </VaultFormSubmit>
         </div>
       </div>

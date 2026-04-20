@@ -12,12 +12,14 @@ const emits = defineEmits<{
   close: []
 }>()
 
-const { onSelect, currentAssetAddress, mode = 'input', allowNativeCurrency = false } = defineProps<{
+const { onSelect, currentAssetAddress, mode = 'input', allowNativeCurrency = false, allowedTokens } = defineProps<{
   onSelect: (asset: VaultAsset, meta?: SwapTokenSelectMeta) => void
   currentAssetAddress?: string
   mode?: 'input' | 'output'
   /** Show address-zero native currency entry. Only enable for flows that support wrapping. */
   allowNativeCurrency?: boolean
+  /** If provided, restrict the token list to only these assets */
+  allowedTokens?: VaultAsset[]
 }>()
 
 const { getByType } = useVaultRegistry()
@@ -89,6 +91,20 @@ const tokenOptions = computed((): TokenOption[] => {
       balanceFormatted: nanoToValue(balance, asset.decimals),
       source: 'tokenList',
     })
+  }
+
+  // Filter to allowed tokens if specified
+  if (allowedTokens?.length) {
+    const allowedSet = new Set(allowedTokens.map(t => getAddress(t.address)))
+    const filtered = options.filter((o) => {
+      try {
+        return allowedSet.has(getAddress(o.asset.address))
+      }
+      catch {
+        return false
+      }
+    })
+    return filtered.sort((a, b) => a.asset.symbol.localeCompare(b.asset.symbol))
   }
 
   // Sort: tokens with balance first (desc by balance), then vault tokens alphabetically

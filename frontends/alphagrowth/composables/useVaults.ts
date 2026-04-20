@@ -1,6 +1,7 @@
 import { getAddress, zeroAddress } from 'viem'
 import { useVaultRegistry } from './useVaultRegistry'
 import { logWarn } from '~/utils/errorHandling'
+import { HIDDEN_COLLATERAL_VAULTS } from '~/entities/hiddenCollateralVaults'
 import {
   type AnyBorrowVaultPair,
   type EarnVault,
@@ -52,6 +53,7 @@ const borrowList = computed((): AnyBorrowVaultPair[] => {
       const collateralVault = registryGetVault(ltv.collateral)
       if (!collateralVault) return
       if (isVaultNotExplorable(collateralVault.address)) return
+      if (HIDDEN_COLLATERAL_VAULTS.has(collateralVault.address.toLowerCase())) return
 
       pairs.push({
         borrow: borrowVault,

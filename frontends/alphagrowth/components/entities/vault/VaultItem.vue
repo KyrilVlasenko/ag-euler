@@ -13,6 +13,7 @@ import { nanoToValue } from '~/utils/crypto-utils'
 import BaseLoadableContent from '~/components/base/BaseLoadableContent.vue'
 import { useModal } from '~/components/ui/composables/useModal'
 import { useVaultRegistry } from '~/composables/useVaultRegistry'
+import { HIDDEN_COLLATERAL_VAULTS } from '~/entities/hiddenCollateralVaults'
 import { VaultSupplyApyModal, VaultCollateralExposureModal } from '#components'
 
 const { isConnected } = useAccount()
@@ -54,6 +55,7 @@ const collateralAssets = computed(() => {
   for (const ltv of vault.collateralLTVs) {
     if (ltv.borrowLTV <= 0n) continue
     if (getCurrentLiquidationLTV(ltv) <= 0n) continue
+    if (HIDDEN_COLLATERAL_VAULTS.has(ltv.collateral.toLowerCase())) continue
     const entry = registryGet(ltv.collateral)
     if (entry) {
       const assetAddr = entry.vault.asset.address.toLowerCase()
