@@ -1,4 +1,14 @@
+import { merklBundledIntrinsicVaults } from '~/entities/custom'
 import type { RewardCampaign } from '~/entities/reward-campaign'
+
+// EVK vault addresses where Merkl rewards are already bundled into Intrinsic
+// supply APY. `getSupplyRewardApy` / `getSupplyRewardCampaigns` receive EVK
+// vault addresses (via `pair.collateral.address`), so the suppression set
+// must be keyed on vault addresses — NOT the BPT asset addresses that drive
+// the intrinsic Merkl provider.
+const MERKL_BUNDLED_INTRINSIC_VAULTS = new Set(
+  merklBundledIntrinsicVaults.map(a => a.toLowerCase()),
+)
 
 export const useRewardsApy = () => {
   const { settings } = useUserSettings()
@@ -21,8 +31,9 @@ export const useRewardsApy = () => {
 
   const getCampaignsForVault = (vaultAddress: string): RewardCampaign[] => {
     if (!isEnabled.value) return []
+    const suppressMerkl = MERKL_BUNDLED_INTRINSIC_VAULTS.has(vaultAddress.toLowerCase())
     return [
-      ...(enableMerkl ? getMerklCampaignsForVault(vaultAddress) : []),
+      ...(enableMerkl && !suppressMerkl ? getMerklCampaignsForVault(vaultAddress) : []),
       ...(enableIncentra ? getBrevisCampaignsForVault(vaultAddress) : []),
       ...(enableFuul ? getFuulCampaignsForVault(vaultAddress) : []),
     ]

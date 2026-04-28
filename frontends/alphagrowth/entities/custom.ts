@@ -1,6 +1,29 @@
 // Base hue for the app theme in degrees (0-360). Change to shift the brand palette.
 export const themeHue = 150
 
+// EVK collateral vault addresses where Merkl rewards are already bundled into
+// Intrinsic supply APY (see the `merkl` provider entries in
+// `intrinsicApySources` below, which are keyed by BPT asset address).
+// `useRewardsApy` uses this list to suppress the Merkl branch of "Supply
+// rewards APY" for these vaults, preventing a double-count.
+export const merklBundledIntrinsicVaults: readonly string[] = [
+  '0x5795130BFb9232C7500C6E57A96Fdd18bFA60436', // Pool 1: wnAUSD/wnUSDC/wnUSDT0 BPT (asset 0x2DAA146...)
+  '0x7ad9f09B431A4C5F4CbA809d449Fde842192f9ec', // Pool 2: sMON/wnWMON BPT Kintsu   (asset 0x02b34a02...)
+  '0x7A81A1613D50ffF334027Aad76F2416368f6050f', // Pool 3: shMON/wnWMON BPT Fastlane (asset 0x340Fa62A...)
+  '0x2067936155c7DB57b1cdCF776B04B9678c245626', // Pool 4: AZND/AUSD/LOAZND BPT    (asset 0xbddb004A...)
+]
+
+const merklBundledIntrinsicVaultsLc = new Set(
+  merklBundledIntrinsicVaults.map(a => a.toLowerCase()),
+)
+
+// Collateral vaults whose underlying is a Balancer BPT. The multiply flow for
+// these markets supplies the borrow asset directly to the Balancer pool to
+// mint BPT — there is no DEX swap, so the oracle-derived "price impact" is
+// not meaningful and must be suppressed in the UI.
+export const isBptCollateralVault = (address?: string | null): boolean =>
+  !!address && merklBundledIntrinsicVaultsLc.has(address.toLowerCase())
+
 // Intrinsic APY sources (data mapping, not deployment config)
 export type IntrinsicApySourceConfig =
   | { provider: 'defillama', address: string, chainId: number, poolId: string, useSpotApy?: boolean }
@@ -96,6 +119,14 @@ export const intrinsicApySources: readonly IntrinsicApySourceConfig[] = [
   { provider: 'merkl', chainId: 143, address: '0x02b34a02db24179Ac2D77Ae20AA6215C7153E7f8', merklIdentifier: '0x02b34a02db24179Ac2D77Ae20AA6215C7153E7f8' },
   { provider: 'merkl', chainId: 143, address: '0x340Fa62AE58e90473da64b0af622cdd6113106Cb', merklIdentifier: '0x340Fa62AE58e90473da64b0af622cdd6113106Cb' },
   { provider: 'merkl', chainId: 143, address: '0xbddb004A6c393C3F83BCCCF7F07eE9d409b214dE', merklIdentifier: '0xbddb004A6c393C3F83BCCCF7F07eE9d409b214dE' },
+  // NOTE: The `merkl` entries above are keyed by BPT asset address (what
+  // `pair.collateral.asset.address` resolves to). The EVK collateral vault
+  // addresses that wrap those BPT assets are listed below and used by
+  // `useRewardsApy` to suppress the Merkl branch of "Supply rewards APY" —
+  // otherwise those rewards would be double-counted on top of Intrinsic
+  // supply APY (which already sums DefiLlama native yield + Merkl rewards).
+  // Keep in sync with the BPT pool addresses above and with the POOLS array
+  // in `composables/useLoopZap.ts`.
 
   // DefiLlama pools — Sonic (146)
   { provider: 'defillama', chainId: 146, address: '0x16af6b1315471Dc306D47e9CcEfEd6e5996285B6', poolId: '24b3096a-488d-4a61-afa6-e5e9be2ce4bf' },

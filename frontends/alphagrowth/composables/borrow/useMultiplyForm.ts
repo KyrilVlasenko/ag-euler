@@ -26,6 +26,7 @@ import { buildSwapRouteItems } from '~/utils/swapRouteItems'
 import { formatSmartAmount, trimTrailingZeros } from '~/utils/string-utils'
 import { nanoToValue } from '~/utils/crypto-utils'
 import { computeMultipliedPriceImpact } from '~/utils/priceImpact'
+import { isBptCollateralVault } from '~/entities/custom'
 import { calculateRoe, computeNextHealth, computeLiquidationPrice } from '~/utils/repayUtils'
 import { computeMaxMultiplier, computeMinMultiplier, computeWeightedSupplyApy, computeLeverageDebt } from '~/utils/multiply-math'
 import type { TxPlan } from '~/entities/txPlan'
@@ -445,6 +446,12 @@ export const useMultiplyForm = (options: UseMultiplyFormOptions) => {
       return
     }
     if (!multiplySwapReady.value || !multiplyShortVault.value || !multiplyLongVault.value) {
+      multiplyPriceImpact.value = null
+      return
+    }
+    // Balancer BPT collateral: no DEX swap happens — borrowed asset is supplied
+    // to the pool to mint BPT — so oracle-derived price impact is spurious.
+    if (isBptCollateralVault(multiplyLongVault.value.address)) {
       multiplyPriceImpact.value = null
       return
     }

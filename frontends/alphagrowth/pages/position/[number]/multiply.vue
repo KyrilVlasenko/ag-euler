@@ -10,6 +10,7 @@ import type { AccountBorrowPosition } from '~/entities/account'
 import type { Vault, VaultAsset } from '~/entities/vault'
 import { getAssetUsdValue, getCollateralUsdValue, getAssetOraclePrice, getCollateralOraclePrice, conservativePriceRatioNumber } from '~/services/pricing/priceProvider'
 import { computeMultipliedPriceImpact } from '~/utils/priceImpact'
+import { isBptCollateralVault } from '~/entities/custom'
 import { usePriceImpactGate } from '~/composables/usePriceImpactGate'
 import { useEulerProductOfVault } from '~/composables/useEulerLabels'
 import { isAnyVaultBlockedByCountry, isVaultRestrictedByCountry } from '~/composables/useGeoBlock'
@@ -441,6 +442,12 @@ watchEffect(async () => {
     return
   }
   if (!multiplySwapReady.value || !multiplyShortVault.value || !multiplyLongVault.value) {
+    multiplyPriceImpact.value = null
+    return
+  }
+  // Balancer BPT collateral: no DEX swap happens — borrowed asset is supplied
+  // to the pool to mint BPT — so oracle-derived price impact is spurious.
+  if (isBptCollateralVault(multiplyLongVault.value.address)) {
     multiplyPriceImpact.value = null
     return
   }
