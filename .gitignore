@@ -48,6 +48,7 @@ euler-lite-origin/
 # --- Reference Repos (standalone clones, not submodules) ---
 reference/*
 !reference/funding-rate-calculator.md
+!reference/ag-playbooks/
 
 # --- Labels Repos (standalone, managed independently) ---
 balancer-labels/

@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "chainId": "143",
+  "createdAt": 1777304816896,
+  "meta": {
+    "name": "Lower AUSD + WMON IRM curves",
+    "description": "AUSD v4->v5 (10%->8% @ kink, 100%->80% max) and WMON v3->v4 (20%->16% @ kink, 100%->80% max). Kink unchanged at 93%."
+  },
+  "transactions": [
+    {
+      "to": "0x438cedcE647491B1d93a73d491eC19A50194c222",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "name": "newModel", "type": "address", "internalType": "address" }
+        ],
+        "name": "setInterestRateModel",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newModel": "0x62C049DE81E407509354172c8f7aB6D2F2001Fd8"
+      }
+    },
+    {
+      "to": "0x75B6C392f778B8BCf9bdB676f8F128b4dD49aC19",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          { "name": "newModel", "type": "address", "internalType": "address" }
+        ],
+        "name": "setInterestRateModel",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newModel": "0xe072FeAA81D2b71360138fBFB6ae877b3d130F1F"
+      }
+    }
+  ]
+}

@@ -13,19 +13,19 @@ All vaults governed by AlphaGrowth Multisig: `0x4f894Bfc9481110278C356adE1473eBe
 | Parameter | Value |
 |---|---|
 | Underlying | AUSD `0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a` (6 decimals) |
-| IRM address | `0xDB4cA8a900a837033b9d7723CDfbd105d1971B7f` |
+| IRM address | `0x62C049DE81E407509354172c8f7aB6D2F2001Fd8` |
 | IRM base rate | 0 |
-| IRM slope1 | 756,138,630 |
-| IRM slope2 | 63,012,954,036 |
+| IRM slope1 | 610,566,643 |
+| IRM slope2 | 53,841,818,838 |
 | IRM kink | 3,994,319,585 (93%) |
-| IRM human-readable | Base=0%, Kink(93%)=10% APY, Max=100% APY |
+| IRM human-readable | Base=0%, Kink(93%)=8% APY, Max=80% APY |
 | Max liquidation discount | 500 (5%) |
 | Liquidation cool-off time | 1 |
 | Supply cap | 0 (unlimited) |
 | Borrow cap | 0 (unlimited) |
 | Hook config | address(0), 0 (all ops enabled) |
 
-**IRM history:** 5% (v1, script 01) → 3.5% (v2, script 10) → 15% (v3, script 11) → 10% (v4, script 12)
+**IRM history:** 5% (v1, script 01) → 3.5% (v2, script 10) → 15% (v3, script 11) → 10% (v4, script 12) → 8% (v5, script 17, max lowered 100%→80%, 2026-04-28, Safe tx `0x80e1688c123158cc35b503f0ca8835b9931169cb32dd8aefd5429a3869e132a7`)
 
 **Collateral LTVs:**
 
@@ -39,19 +39,19 @@ All vaults governed by AlphaGrowth Multisig: `0x4f894Bfc9481110278C356adE1473eBe
 | Parameter | Value |
 |---|---|
 | Underlying | WMON `0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A` (18 decimals) |
-| IRM address | `0x22d3553a16b595d1789D67edfCbaa8f3cb62E0DE` |
+| IRM address | `0xe072FeAA81D2b71360138fBFB6ae877b3d130F1F` |
 | IRM base rate | 0 |
-| IRM slope1 | 1,446,439,121 |
-| IRM slope2 | 53,841,818,943 |
+| IRM slope1 | 1,177,482,829 |
+| IRM slope2 | 46,309,932,376 |
 | IRM kink | 3,994,319,585 (93%) |
-| IRM human-readable | Base=0%, Kink(93%)=20% APY, Max=100% APY |
+| IRM human-readable | Base=0%, Kink(93%)=16% APY, Max=80% APY |
 | Max liquidation discount | 500 (5%) |
 | Liquidation cool-off time | 1 |
 | Supply cap | 0 (unlimited) |
 | Borrow cap | 0 (unlimited) |
 | Hook config | address(0), 0 (all ops enabled) |
 
-**IRM history:** 5% (v1, script 01) → 9% (v2, script 10) → 20% (v3, script 11)
+**IRM history:** 5% (v1, script 01) → 9% (v2, script 10) → 20% (v3, script 11) → 16% (v4, script 17, max lowered 100%→80%, 2026-04-28, Safe tx `0x80e1688c123158cc35b503f0ca8835b9931169cb32dd8aefd5429a3869e132a7`)
 
 **Collateral LTVs:**
 
