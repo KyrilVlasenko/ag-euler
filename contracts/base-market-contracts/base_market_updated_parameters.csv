@@ -1,0 +1,31 @@
+Supply and Borrow Caps
+Asset,Supply Cap Tokens,Supply Cap USD,Borrow Cap Tokens,Borrow Cap USD
+VVV,330000,6850000,170000,4500000
+VIRTUAL,3300000,2440000,2250000,2000000
+MOR,18000,40000,11500,35000
+ZRO,180000,230000,74000,120000
+AERO,15000000,5550000,15000000,5550000
+USDC,10000000,10000000,10000000,10000000
+WETH,5500,10000000,5500,10000000
+
+LTV LLTV and Liquidation Bonus
+Asset or Pair,Collateral Scope,LTV %,LLTV %,Liquidation Bonus %
+VVV,Asset,80,85,15
+VIRTUAL,Asset,80,85,15
+MOR,Asset,75,80,15
+ZRO,Asset,80,85,15
+AERO,Asset,80,85,15
+USDC/ETH,Pair,85,87,15
+USDC/other tokens,Pair group,80,85,15
+WETH/USDC,Pair,85,87,15
+WETH/other tokens,Pair group,80,85,15
+
+IRM Curves
+Asset,Kink Utilization %,Borrow Rate at Base %,Borrow Rate at Kink %,Borrow Rate at Max Util %
+VVV,90,0,12,120
+VIRTUAL,90,0,12,100
+MOR,90,0,12,100
+ZRO,90,0,10,100
+AERO,90,0,16,120
+USDC,90,0,8,100
+WETH,90,0,4,80

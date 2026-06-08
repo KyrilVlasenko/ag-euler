@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1780692370000,
+  "meta": {
+    "name": "AlphaGrowth Base - set USDC and WETH interest fees to 10%",
+    "description": "Sets interestFee to 1000 (10%) for the AlphaGrowth Base USDC and WETH vaults governed by 0x4f894Bfc9481110278C356adE1473eBe2127Fd3C."
+  },
+  "transactions": [
+    {
+      "to": "0x0A1a3b5f2041F33522C4efc754a7D096f880eE16",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "newFee",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setInterestFee",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newFee": "1000"
+      }
+    },
+    {
+      "to": "0x859160DB5841E5cfB8D3f144C6b3381A85A4b410",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "newFee",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setInterestFee",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newFee": "1000"
+      }
+    }
+  ]
+}

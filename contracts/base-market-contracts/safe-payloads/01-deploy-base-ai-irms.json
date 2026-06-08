@@ -1,0 +1,233 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1780617600000,
+  "meta": {
+    "name": "Base AI cluster - deploy updated IRMs",
+    "description": "Deploys six Kink IRMs for USDC, WETH, VVV, VIRTUAL, ZRO, and AERO. IMPORTANT: update payload assumes factory nonce 112 before this transaction is executed."
+  },
+  "transactions": [
+    {
+      "to": "0x2d94C898a17f9D8c0bA75010A51cd61BF55b402E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "baseRate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope1",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope2",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kink",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "deploy",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "baseRate": "0",
+        "slope1": "781343251",
+        "slope2": "51141157152",
+        "kink": "3865470566"
+      }
+    },
+    {
+      "to": "0x2d94C898a17f9D8c0bA75010A51cd61BF55b402E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "baseRate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope1",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope2",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kink",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "deploy",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "baseRate": "0",
+        "slope1": "399976852",
+        "slope2": "54573454741",
+        "kink": "3865470566"
+      }
+    },
+    {
+      "to": "0x2d94C898a17f9D8c0bA75010A51cd61BF55b402E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "baseRate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope1",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope2",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kink",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "deploy",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "baseRate": "0",
+        "slope1": "929057149",
+        "slope2": "49811732071",
+        "kink": "3865470566"
+      }
+    },
+    {
+      "to": "0x2d94C898a17f9D8c0bA75010A51cd61BF55b402E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "baseRate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope1",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope2",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kink",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "deploy",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "baseRate": "0",
+        "slope1": "929057149",
+        "slope2": "49811732071",
+        "kink": "3865470566"
+      }
+    },
+    {
+      "to": "0x2d94C898a17f9D8c0bA75010A51cd61BF55b402E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "baseRate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope1",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope2",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kink",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "deploy",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "baseRate": "0",
+        "slope1": "781343251",
+        "slope2": "51141157152",
+        "kink": "3865470566"
+      }
+    },
+    {
+      "to": "0x2d94C898a17f9D8c0bA75010A51cd61BF55b402E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "baseRate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope1",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "slope2",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "kink",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "deploy",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "baseRate": "0",
+        "slope1": "1216732257",
+        "slope2": "47222656100",
+        "kink": "3865470566"
+      }
+    }
+  ]
+}
