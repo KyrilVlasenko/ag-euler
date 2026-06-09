@@ -2,7 +2,45 @@
 
 Step-by-step playbook for deploying a new Euler V2 partner market. Distilled from the Origin (simple pair), Cork (custom contracts), and Balancer (multi-pool) deployments.
 
-**Context files:** This SOP covers the deployment workflow. For labels architecture and integration context, see `CLAUDE.md`. For per-partner contract details, see `contracts/<partner>-contracts/<partner>-claude.md` if one exists.
+**Canonical status:** This is the source of truth for every new AlphaGrowth Euler market launch. Older partner READMEs and deployment scripts document what was done historically; where they conflict with this SOP, follow this SOP.
+
+**Context files:** This SOP covers the deployment workflow. For labels architecture and integration context, see `AGENTS.md`. For per-partner contract details, see the relevant file under `contracts/<partner>-contracts/`.
+
+## Non-Negotiable Oracle Deployment Policy
+
+1. **Deploy every new Oracle Router through Euler's Oracle Router interface:**
+   [https://create.euler.finance/oracle/](https://create.euler.finance/oracle/)
+2. **Deploy every new supported Oracle adapter through Euler's Oracle Deployer interface:**
+   [https://oracle-deployer.euler.finance/oracles](https://oracle-deployer.euler.finance/oracles)
+3. **Do not instantiate `EulerRouter` or a supported adapter directly from a Foundry script**, even if an older partner deployment contains such a script.
+4. Export and retain any revision/configuration file offered by the Euler interface. Browser-local revisions are not sufficient deployment records.
+
+Why this matters:
+
+- Euler's factory deployment path makes routers discoverable by Euler infrastructure, including oracle checks and frontend tooling.
+- A vault's Oracle Router address is embedded in immutable vault initialization data. It cannot be replaced after the vault is deployed.
+- Adapter addresses are configured inside the router and can be changed by router governance.
+
+### Legacy Deployment Remediation
+
+| Legacy problem | Required remediation |
+|---|---|
+| Oracle Router was deployed directly instead of through Euler's factory | Deploy a replacement router through Euler's interface, then redeploy every vault whose immutable oracle address points to the old router. Reconfigure, activate, test, transfer governance, migrate labels/liquidity, and deprecate the old vaults. |
+| Supported Oracle adapter was deployed directly | Redeploy the adapter through Euler's Oracle Deployer, verify it, then update every affected router with `govSetConfig`. Vault redeployment is not required if the vault already points to a valid factory-deployed router. |
+| Router and adapters were both deployed directly | Redeploy adapters through the Oracle Deployer, deploy and configure a new router through the router factory interface, then redeploy all vaults that reference the old router. |
+
+Do not migrate a live market piecemeal without a written sequence. A partially updated cluster can produce inconsistent collateral valuations across vaults.
+
+For a live router migration:
+
+1. Inventory every vault that returns the legacy router from `oracle()`.
+2. Inventory every configured route, resolved vault, governor, LTV, cap, IRM, fee, hook, and label.
+3. Deploy and verify replacement adapters through Euler's Oracle Deployer.
+4. Deploy and verify the replacement router through Euler's factory interface.
+5. Redeploy all affected vaults with the new router address.
+6. Reapply all configuration and run deposit, borrow, repay, withdraw, and liquidation tests.
+7. Transfer governance and publish labels for the replacement vaults.
+8. Deprecate old vaults carefully. Zeroing supply/borrow caps prevents new exposure but does not migrate or erase existing user positions. Keep the old router functional until all debt and collateral positions are safely closed or migrated.
 
 ---
 
@@ -27,15 +65,20 @@ Is collateral ERC-4626?
 └─ NO: Is there a Chainlink or Pyth feed for collateral/borrowAsset?
    ├─ YES: Is the adapter already deployed on this chain? (check CSV below)
    │  ├─ YES → Use existing adapter address directly
-   │  └─ NO  → Deploy a new ChainlinkOracle adapter (ZRO pattern, see Phase 2 step 0)
-   └─ NO  → Write a custom oracle adapter (Cork pattern)
+   │  └─ NO  → Deploy a supported adapter through Euler's Oracle Deployer
+   └─ NO  → Design a custom adapter and obtain Euler confirmation on the supported
+             deployment/registration path before deploying any vault
 ```
+
+Existing adapters may be reused only after confirming their base, quote, feed/source, staleness settings, chain, and current quote behavior. Do not rely on an address list alone.
+
+If the Oracle Deployer does not support the required adapter type, stop and coordinate with Euler. Do not silently fall back to direct deployment for a production market.
 
 ### 0.3 Adding to an Existing Cluster?
 
 If a borrow vault for your desired borrow asset (e.g. USDC, ETH) already exists and you want to add a new collateral type to it, you do NOT need to deploy a new borrow vault. **Skip to Phase 2B** instead of Phase 2.
 
-Key difference: you deploy only your token's vault + router, then wire into the existing cluster's routers and vaults. This requires governor access to the existing contracts. See `contracts/zro-contracts/` for the reference implementation.
+Key difference: you deploy only your token's vault and, when required by the cluster architecture, a new factory-deployed router. You then wire the new asset into the existing cluster's routers and vaults. This requires governor access to the existing contracts. See Phase 2B; legacy ZRO scripts are architecture references, not current oracle deployment instructions.
 
 ### 0.4 Check Existing Oracle Adapters
 
@@ -46,6 +89,21 @@ reference/euler-interfaces/addresses/<chainId>/OracleAdaptersAddresses.csv
 ```
 
 Search it for your collateral/borrow tokens before building anything. If an adapter exists, note its address — you can wire it directly in step 5.
+
+For every reused adapter, record:
+
+| Field | How to verify |
+|---|---|
+| Adapter address | Chain registry and explorer |
+| Adapter type/name | `name()` or verified source |
+| Base token | `base()` |
+| Quote token / unit of account | `quote()` |
+| Feed/source | Adapter-specific getter such as `feed()` |
+| Max staleness | `maxStaleness()` where applicable |
+| Live quote | `getQuote()` for one whole base token |
+| Feed heartbeat/deviation | Oracle provider documentation |
+
+The adapter's base and quote must match the route that will be configured in the router. Token decimals and the unit-of-account convention must be verified before deployment.
 
 ### 0.5 Look Up Euler V2 Core Addresses
 
@@ -135,13 +193,16 @@ contracts/origin-contracts/
 └── script/
     ├── Addresses.sol     ← Replace with target chain's Euler core + token addresses
     ├── 01_DeployIRM.s.sol
-    ├── 02_DeployRouter.s.sol
     ├── 03_DeployBorrowVault.s.sol
-    ├── 04_DeployCollateralVault.s.sol
     ├── 05_WireOracle.s.sol
     ├── 06_ConfigureCluster.s.sol
-    └── 07_SetFeeReceiver.s.sol
+    ├── 07_SetFeeReceiver.s.sol
+    └── 08_ActivateMarkets.s.sol
 ```
+
+**Delete or disable copied scripts that directly deploy `EulerRouter` or supported oracle adapters.** Their presence in an older template does not make them valid for a new launch. The router and adapter addresses used by the remaining scripts must come from Euler's interfaces.
+
+Use the unified-vault pattern by default. Do not copy a standalone collateral-vault script unless the market design genuinely requires separate collateral vaults and that exception has been documented.
 
 ### 1.3 Install forge-std
 
@@ -240,12 +301,12 @@ ETHERSCAN_API_KEY=
 # ─── Outputs (filled by scripts as you deploy) ───
 # Step 1
 KINK_IRM=
-# Step 2
+# Euler Oracle Router interface output
 EULER_ROUTER=
-# Step 3
+# Euler Oracle Deployer outputs
+<ASSET>_ORACLE_ADAPTER=
+# Vault deployment outputs
 BORROW_VAULT=
-# Step 4
-COLLATERAL_VAULT=
 
 # ─── Fee Receiver ───
 FEE_RECEIVER=0x4f894Bfc9481110278C356adE1473eBe2127Fd3C
@@ -253,28 +314,72 @@ FEE_RECEIVER=0x4f894Bfc9481110278C356adE1473eBe2127Fd3C
 
 ---
 
-## Phase 2: Deploy Contracts (The 7-Script Pattern)
+## Phase 2: Deploy Oracles, Router, and Markets
 
-Run each script sequentially. Paste the output address into `.env` before running the next.
+The mandatory order is:
 
-### Step 0 (if needed): Deploy Chainlink Oracle Adapter
+1. Finalize token, unit-of-account, feed, staleness, and route design.
+2. Deploy any required supported adapters through Euler's Oracle Deployer.
+3. Deploy the Oracle Router through Euler's Oracle Router interface/factory.
+4. Deploy vaults with the factory-deployed router address embedded in `trailingData`.
+5. Configure router routes/resolved vaults, risk parameters, fees, and operations.
+6. Verify the complete market before transferring governance or publishing labels.
 
-If you need a Chainlink price feed and no adapter exists yet for your token pair on this chain (check the CSV from Phase 0), deploy one using the `ChainlinkOracle` from `reference/euler-price-oracle/src/adapter/chainlink/ChainlinkOracle.sol`:
+### Step 0: Prepare the Oracle Deployment Worksheet
 
-```solidity
-ChainlinkOracle adapter = new ChainlinkOracle(
-    baseToken,      // the token being priced (e.g. ZRO)
-    quoteToken,     // unit of account (e.g. address(840) for USD)
-    chainlinkFeed,  // the Chainlink aggregator address
-    maxStaleness    // heartbeat + buffer (e.g. 90000 for 24h heartbeat + 1h)
-);
+Prepare one row for every price edge needed by the router:
+
+| Field | Required information |
+|---|---|
+| Chain | Chain name and chain ID |
+| Adapter type | Chainlink, Pyth, Redstone, ERC-4626 resolution, or approved custom type |
+| Base | Token being priced |
+| Quote | Borrow asset or unit of account |
+| Feed/source | Verified provider contract/feed ID |
+| Token decimals | Base and quote decimals |
+| Heartbeat/deviation | Provider's documented update policy |
+| Max staleness | Risk-approved value, normally heartbeat plus a documented buffer |
+| Expected price | Independent reference price and acceptable tolerance |
+| Reuse/deploy | Existing verified adapter or new deployment |
+
+Common unit of account:
+
+```text
+ISO USD address(840) = 0x0000000000000000000000000000000000000348
+Euler treats this address as an 18-decimal unit of account.
 ```
 
-The adapter calls `_getDecimals` on both tokens — addresses `<= 0xffffffff` (like USD `address(840)`) return 18 decimals automatically. `maxStaleness` must be between 1 minute and 72 hours.
+Never guess a feed address or copy one from another chain.
 
-**Output:** `CHAINLINK_ADAPTER=0x...` → paste into `.env`
+### Step 0A (if needed): Deploy Oracle Adapters Through Euler
 
-See `contracts/zro-contracts/script/01_DeployChainlinkAdapter.s.sol` for a complete example.
+Open [https://oracle-deployer.euler.finance/oracles](https://oracle-deployer.euler.finance/oracles).
+
+1. Select the target chain and create an oracle deployment revision.
+2. Add one adapter for each worksheet row that cannot reuse an approved existing adapter.
+3. Enter the exact base, quote, feed/source, and risk-approved staleness parameters.
+4. Review directionality. `TOKEN/USD` and `USD/TOKEN` are not interchangeable configurations.
+5. Connect the intended deployment wallet on the correct chain.
+6. Deploy and record the adapter address and transaction hash.
+7. Export the revision/configuration JSON and store it with the partner's deployment records.
+8. Verify the deployed adapter on-chain before using it in a router.
+
+For a Chainlink adapter, verify at minimum:
+
+```bash
+cast call <ADAPTER> "base()(address)" --rpc-url $RPC
+cast call <ADAPTER> "quote()(address)" --rpc-url $RPC
+cast call <ADAPTER> "feed()(address)" --rpc-url $RPC
+cast call <ADAPTER> "maxStaleness()(uint256)" --rpc-url $RPC
+cast call <ADAPTER> "getQuote(uint256,address,address)(uint256)" \
+  <ONE_WHOLE_BASE_TOKEN> <BASE> <QUOTE> --rpc-url $RPC
+```
+
+Compare the result with the underlying feed and an independent market-price source. Check both quote directions if the market/router may use both.
+
+**Output:** one `<ASSET>_ORACLE_ADAPTER=0x...` per deployed adapter.
+
+**Custom adapters:** If the required type is not supported by the interface, obtain an approved deployment/registration procedure from Euler before proceeding. Custom source code still requires unit tests, fork tests, verification, economic manipulation analysis, and explicit documentation of all external dependencies.
 
 ### Step 1: Deploy IRM
 
@@ -306,14 +411,43 @@ source .env && forge script script/01_DeployIRM.s.sol \
 
 ### Step 2: Deploy Oracle Router
 
-Deploys an EulerRouter owned by the deployer. The router is the oracle address embedded in the borrow vault.
+Open [https://create.euler.finance/oracle/](https://create.euler.finance/oracle/) and deploy the router through Euler's Oracle Router factory.
 
-**Run:**
+Before opening the interface, prepare:
+
+- Target chain and chain ID
+- Initial governor address
+- Unit of account
+- Every base/quote route
+- Adapter address for every route
+- Any already-existing ERC-4626/eVault address that must be resolved
+- Expected quotes for test amounts
+
+Deployment procedure:
+
+1. Connect the deployment/governance wallet on the target chain.
+2. Create a new Oracle Router configuration.
+3. Add every adapter route from the worksheet if the interface includes route configuration in the deployment flow.
+4. Add known existing resolved vaults/ERC-4626 wrappers if the interface supports them. Newly deployed market vaults are resolved later in Step 5, after their addresses exist.
+5. Review the initial route graph and deployment parameters.
+6. Deploy through the interface and confirm that the transaction uses Euler's listed Oracle Router factory for that chain.
+7. Record the router address, factory address, deployment transaction, chain, initial governor, routes, and resolved vaults.
+8. Export/save any configuration artifact offered by the interface.
+9. Verify the router before deploying vaults.
+
+If the interface deploys the router without all final routes, apply the remaining `govSetConfig` calls immediately after deployment and verify them before creating vaults. Do not replace the factory deployment with a direct constructor call.
+
+Verification:
+
 ```bash
-source .env && forge script script/02_DeployRouter.s.sol \
-  --rpc-url $RPC_URL_<CHAIN> --private-key $PRIVATE_KEY \
-  --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
+cast call <ROUTER> "governor()(address)" --rpc-url $RPC
+cast call <ROUTER> "getQuote(uint256,address,address)(uint256)" \
+  <TEST_AMOUNT> <BASE> <QUOTE> --rpc-url $RPC
 ```
+
+Also confirm through the explorer transaction that the router was created by Euler's factory, not by a direct contract-creation transaction from the deployer.
+
+**Critical immutability checkpoint:** Do not deploy a vault until the router address and quote behavior have been independently reviewed. The router address placed in vault `trailingData` cannot be changed later.
 
 **Output:** `EULER_ROUTER=0x...` → paste into `.env`
 
@@ -377,9 +511,13 @@ router.govSetResolvedVault(borrowVaultB, true);  // eVaultB shares → tokenB
 
 The resolution chain is: eVault shares → `asset()` → underlying token → price adapter → USD value.
 
+This is the point where newly deployed vault addresses are added as resolved vaults. Verify the complete route graph after these calls and before enabling LTVs.
+
 **ERC-4626 resolution (Origin pattern):** If collateral is itself an ERC-4626 wrapper (e.g. sfrxETH → WETH), use `govSetResolvedVault` on the token itself for multi-hop resolution.
 
-**Custom oracle path (Cork pattern):** Deploy a custom oracle contract in `src/`, then wire it via `govSetConfig`.
+**Custom oracle path (Cork pattern):** Implement and test the custom pricing contract in `src/`, then coordinate with Euler so the production adapter is deployed through the Oracle Deployer or another explicitly approved Euler workflow before wiring it with `govSetConfig`.
+
+Do not directly deploy a production adapter just because an older Cork, Frax, Balancer, or Base script did so.
 
 **Run:**
 ```bash
@@ -651,7 +789,7 @@ NUXT_PUBLIC_SUBGRAPH_URI_<chainId>="<subgraph-url>"
 
 The labels repo, branding, and standard feature flags are already set for the consolidated deployment.
 
-### 4.3 Known Subgraph URIs
+### 4.4 Known Subgraph URIs
 
 Copy-paste ready. These are the full URIs for `NUXT_PUBLIC_SUBGRAPH_URI_<chainId>`.
 
@@ -672,11 +810,11 @@ Copy-paste ready. These are the full URIs for `NUXT_PUBLIC_SUBGRAPH_URI_<chainId
 | TAC | 239 | `https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-tac/latest/gn` |
 | Plasma | 9745 | `https://api.goldsky.com/api/public/project_cm4iagnemt1wp01xn4gh1agft/subgraphs/euler-simple-plasma/latest/gn` |
 
-### 4.4 Vercel Deployment (Michael)
+### 4.5 Vercel Deployment (Michael)
 
 Michael redeploys the consolidated Vercel project with the updated `.env`. No new Vercel project needed — all partners share one deployment.
 
-### 4.5 Optional: Intrinsic APY Sources
+### 4.6 Optional: Intrinsic APY Sources
 
 If the collateral token has a DeFi Llama or Merkl yield source, add it to `entities/custom.ts` in the frontend:
 
@@ -697,6 +835,13 @@ intrinsicApySources: [
 
 ### Verification
 
+- [ ] **All new supported adapters were deployed through Euler's Oracle Deployer** — deployment revisions/configuration exports and transaction hashes retained
+- [ ] **Oracle Router was deployed through Euler's Oracle Router factory interface** — factory creation confirmed on the explorer
+- [ ] Router address embedded in every vault matches the reviewed factory-deployed router — verify with `cast call <vault> "oracle()(address)"`
+- [ ] Router governor is the expected deployment wallet or multisig
+- [ ] Every adapter's base, quote, feed/source, and staleness match the deployment worksheet
+- [ ] Every adapter quote matches its source and an independent reference within the approved tolerance
+- [ ] Every router route resolves for both underlying assets and vault-share collateral
 - [ ] **Markets activated** — `setHookConfig(address(0), 0)` called on ALL borrow vaults. Verify: `cast call <vault> "hookConfig()(address,uint32)"` returns `0` for the second value.
 - [ ] Vaults appear in frontend (check `products.json` is fetched correctly)
 - [ ] Entity logos render (check `entities.json` + `logo/` directory)
@@ -708,6 +853,7 @@ intrinsicApySources: [
 - [ ] Each vault shows both "Borrow against" and "Use as collateral" on the frontend (unified market)
 - [ ] Multiply flow works (if applicable)
 - [ ] Oracle prices resolve correctly on-chain
+- [ ] Oracle deployment revision/configuration exports are stored with the market deployment records
 
 ### Hardening
 
@@ -720,7 +866,7 @@ intrinsicApySources: [
 
 - [ ] Add a new section to `TODO.md` for this partner (follow the format of existing sections: status, deployed addresses table, remaining TODOs)
 - [ ] Document all deployed addresses in `contracts/<partner>-contracts/.env`
-- [ ] If custom contracts or non-obvious architecture, create `contracts/<partner>-contracts/<partner>-claude.md`
+- [ ] If custom contracts or non-obvious architecture, create or update the partner's `AGENTS.md`/deployment context file
 
 ### Governance
 
@@ -729,13 +875,14 @@ intrinsicApySources: [
 - [ ] Transfer ALL borrow vault governors from deployer EOA to multisig via `setGovernorAdmin()` — see `contracts/base-market-contracts/script/cluster-management/30_TransferGovernance.s.sol` for reference
 - [ ] Transfer oracle router governance via `transferGovernance()`
 - [ ] Verify on-chain: `cast call <vault> "governorAdmin()(address)"` returns the multisig
+- [ ] Verify on-chain: `cast call <router> "governor()(address)"` returns the multisig
 - [ ] Verify the multisig address exists in the `alphagrowth` entity's `addresses` in `euler-xyz/euler-labels`
 
 ---
 
 ## When Do You Need Custom Contracts?
 
-For most ERC-4626 collateral/borrow pairs, the Origin 7-script pattern works with zero custom Solidity. You need custom contracts when:
+For most ERC-4626 collateral/borrow pairs, the standard factory/UI plus Foundry workflow works with zero custom Solidity. You need custom contracts when:
 
 | Situation | Example | Reference |
 |---|---|---|
@@ -746,13 +893,13 @@ For most ERC-4626 collateral/borrow pairs, the Origin 7-script pattern works wit
 | Swap adapter for multiply | Balancer: BPT adapter for single-sided LP | `contracts/balancer-contracts/src/` |
 | Custom oracle with keeper | Frax: ICHI vault TWAP oracle + OraclePoke | `contracts/frax-contracts/ichi-oracle-kit/src/` |
 
-If any of these apply, create `src/` in your contracts directory and add the custom Solidity. The deployment scripts will need additional steps to deploy and wire these contracts.
+If any of these apply, create `src/` in your contracts directory and add the custom Solidity. Test and audit it locally, but coordinate the production oracle-adapter deployment path with Euler before launching the market. Non-oracle custom contracts can continue to use project deployment scripts.
 
 ---
 
 ## Quick Reference: Run Commands
 
-All scripts follow the same pattern. Replace `<N>` with step number, `<CHAIN>` with your chain name:
+Foundry-managed contract steps follow the same pattern. Replace `<N>` with step number and `<CHAIN>` with your chain name. **Do not use this pattern to deploy Oracle Routers or supported oracle adapters.**
 
 ```bash
 # Load env
@@ -779,7 +926,7 @@ forge script script/0<N>_<ScriptName>.s.sol \
 
 Use this instead of Phase 2 when borrow vaults (e.g. USDC, ETH) already exist and you want to add a new collateral token that is also borrowable against those existing vaults.
 
-**Reference implementation:** `contracts/zro-contracts/` (ZRO added to existing USDC + ETH cluster on Base).
+**Historical architecture reference:** `contracts/base-market-contracts/script/zro/` (ZRO added to the Base cluster). Its direct adapter deployment step is obsolete; use Euler's Oracle Deployer.
 
 ### Prerequisites
 
@@ -799,18 +946,13 @@ The deployer running scripts that touch existing vaults/routers **must be govern
 
 ### Step 0: Deploy Oracle Adapter (if needed)
 
-If no adapter exists for your token on this chain, deploy a `ChainlinkOracle`:
+If no approved adapter exists for your token on this chain, deploy it through:
 
-```solidity
-ChainlinkOracle adapter = new ChainlinkOracle(
-    newToken,        // e.g. ZRO
-    USD,             // address(840)
-    chainlinkFeed,   // the Chainlink aggregator
-    maxStaleness     // heartbeat + buffer
-);
-```
+[https://oracle-deployer.euler.finance/oracles](https://oracle-deployer.euler.finance/oracles)
 
 Check `reference/euler-interfaces/addresses/<chainId>/OracleAdaptersAddresses.csv` first — if an adapter already exists, skip this step and use that address.
+
+Apply the full worksheet, deployment-record, and verification procedure from Phase 2 Step 0/0A.
 
 ### Step 1: Deploy IRM
 
@@ -822,11 +964,11 @@ forge script script/02_DeployIRMs.s.sol --rpc-url base --broadcast --verify
 
 ### Step 2: Deploy Router
 
-Deploy an EulerRouter for your new vault. The existing vaults keep their own routers.
+If the architecture requires a router for the new vault, deploy it through Euler's Oracle Router factory interface:
 
-```bash
-forge script script/03_DeployRouter.s.sol --rpc-url base --broadcast --verify
-```
+[https://create.euler.finance/oracle/](https://create.euler.finance/oracle/)
+
+The existing vaults keep their current routers only if those routers are valid factory-deployed routers. If an existing router was directly deployed, remediate it and redeploy every vault that immutably references it before treating the cluster as production-ready.
 
 ### Step 3: Deploy Your Borrow Vault
 
@@ -964,7 +1106,7 @@ cast call $VAULT "governorAdmin()(address)" --rpc-url $RPC
 | Euler reference repos | `reference/` (EVC, EVK, price oracle, etc.) |
 | IRM calculator | `reference/evk-periphery/script/utils/calculate-irm-linear-kink.js` |
 | Project task tracker | `TODO.md` |
-| Labels + integration context | `CLAUDE.md` |
+| Labels + integration context | `AGENTS.md` |
 
 ---
 
@@ -1007,3 +1149,31 @@ Adding vaults to the same product in `products.json` only affects how they're gr
 ### 7. AmountCap encoding for supply/borrow caps
 
 Euler V2 encodes caps as 16-bit values: `10^(raw & 63) * (raw >> 6) / 100`. The `/100` is easy to forget — without it, decoded values are 100x too high. Use the `AmountCapLib.resolve()` function from `reference/euler-vault-kit/src/EVault/shared/types/AmountCap.sol` as the reference.
+
+### 8. Deploy Oracle Routers only through Euler's factory interface
+
+The router address is immutable in each vault's initialization data. A directly deployed router cannot be swapped out of an existing vault. If the router must be replaced with a factory-deployed router, every vault using the old address must be redeployed and fully reconfigured.
+
+**Correct order:** deploy/verify adapters → deploy/verify factory router → independently review router → deploy vaults.
+
+Never use a legacy `new EulerRouter(...)` script for a new production market.
+
+### 9. Deploy supported oracle adapters through Euler's Oracle Deployer
+
+Adapter addresses are mutable router configuration, so replacing a directly deployed adapter normally requires `govSetConfig`, not vault redeployment. Update every router that uses the adapter, then verify router quotes before and after the change.
+
+Keep the exported deployment revision, adapter parameters, transaction hash, and verification results. A contract address without its base, quote, feed/source, staleness policy, and expected quote is not a sufficient deployment record.
+
+### 10. Treat oracle configuration as a reviewed dependency graph
+
+Test the complete route from collateral vault shares to the unit of account, not only each adapter in isolation:
+
+```text
+eVault share → underlying token → optional wrapper/adapter hops → unit of account
+```
+
+A valid individual adapter does not prove the router can price every collateral accepted by every borrow vault. Run `getQuote` tests for each enabled LTV edge and use realistic token amounts that account for decimals.
+
+### 11. Never leave browser-only deployment records
+
+Euler's oracle tools store revisions locally in the browser. Export configuration artifacts immediately and store them with the market's address manifest and transaction hashes. Losing browser storage should not make the deployment impossible to reproduce or audit.

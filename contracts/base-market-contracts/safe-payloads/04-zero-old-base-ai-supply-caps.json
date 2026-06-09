@@ -1,0 +1,161 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1780938000000,
+  "meta": {
+    "name": "Base AI cluster - zero old vault supply caps",
+    "description": "Stops new supply to the six superseded Base AI vaults while preserving their existing borrow caps and all exit, repay, and liquidation operations."
+  },
+  "transactions": [
+    {
+      "to": "0x21c8c8A56790A2b10370373fAcb94e925fD6a06E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "79"
+      }
+    },
+    {
+      "to": "0x68AAD2c78065E2D28d2B46f6A80c5a813461FFf4",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "3542"
+      }
+    },
+    {
+      "to": "0x4B6509B06f664eb8c8a4e9072655A4C6cafc1D9C",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "1112"
+      }
+    },
+    {
+      "to": "0x3Bd428B28C52f3534CC78075799CA798e4BcE5a8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "14424"
+      }
+    },
+    {
+      "to": "0xCB935d7916B20748e7f14C3B95931b8dcdA2472D",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "1752"
+      }
+    },
+    {
+      "to": "0xAf5F576396730C212A8C6056A00eaA58123d78B6",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "986"
+      }
+    }
+  ]
+}

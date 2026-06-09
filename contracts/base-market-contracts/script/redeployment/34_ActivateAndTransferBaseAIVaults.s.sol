@@ -6,10 +6,9 @@ import {IEVC} from "ethereum-vault-connector/interfaces/IEthereumVaultConnector.
 import {IEVault} from "euler-vault-kit/EVault/IEVault.sol";
 import {Addresses} from "../Addresses.sol";
 
-/// @notice Activates the fully configured Base AI vaults and transfers governance.
-contract ActivateAndTransferBaseAIVaults is Script {
+/// @notice Activates the fully configured Base AI vaults without transferring governance.
+contract ActivateBaseAIVaults is Script {
     address internal constant DEPLOYER = 0x8b59FC48E305AFE0934A897F0Cac6cbD3764F3dd;
-    address internal constant FINAL_GOVERNOR = 0x4f894Bfc9481110278C356adE1473eBe2127Fd3C;
 
     uint16 internal constant BLUE_CHIP_LTV = 8700;
     uint16 internal constant BLUE_CHIP_LLTV = 9000;
@@ -37,7 +36,7 @@ contract ActivateAndTransferBaseAIVaults is Script {
             _verifyLTV(vaults[collateralIndex], vaults[1], VOLATILE_LTV, VOLATILE_LLTV);
         }
 
-        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](12);
+        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](6);
         uint256 index;
         for (uint256 i; i < vaults.length; ++i) {
             IEVault vault = IEVault(vaults[i]);
@@ -47,14 +46,14 @@ contract ActivateAndTransferBaseAIVaults is Script {
             require(hookedOps == INITIAL_HOOKED_OPS, "vault already activated");
 
             items[index++] = _item(vaults[i], abi.encodeCall(vault.setHookConfig, (address(0), 0)));
-            items[index++] = _item(vaults[i], abi.encodeCall(vault.setGovernorAdmin, (FINAL_GOVERNOR)));
         }
 
         vm.startBroadcast();
         IEVC(Addresses.EVC).batch(items);
         vm.stopBroadcast();
 
-        console.log("Activated six Base AI vaults and transferred governance to %s", FINAL_GOVERNOR);
+        console.log("Activated six Base AI vaults.");
+        console.log("Governance remains with %s", DEPLOYER);
     }
 
     function _verifyLTV(

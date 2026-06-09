@@ -71,7 +71,7 @@ AG-Euler/
 │   └── ...
 ├── CLAUDE.md                   ← AI context: contracts, labels, integration
 ├── TODO.md                     ← Task tracker (all partners)
-├── new_market.md               ← New market deployment SOP
+├── NEW_MARKET_SOP.md           ← New market deployment SOP
 └── README.md
 ```
 
@@ -102,7 +102,7 @@ AG-Euler/
 | `06_ConfigureCluster.s.sol` | Mostly reusable | LTVs, IRM params, caps |
 | `07_SetFeeReceiver.s.sol` | Identical — copy as-is | Fee receiver address |
 
-Full deployment SOP with templates, parameters, and chain addresses: see `new_market.md`.
+Full deployment SOP with templates, parameters, and chain addresses: see `NEW_MARKET_SOP.md`.
 
 ---
 

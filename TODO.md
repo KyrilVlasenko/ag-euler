@@ -33,7 +33,7 @@ All partner frontends consolidated into `frontends/alphagrowth/` — a single eu
 - [x] Update `README.md` for consolidated structure
 - [x] Update `TODO.md` for consolidated structure
 - [x] Update `CLAUDE.md` for consolidated structure
-- [x] Update `new_market.md` for consolidated structure
+- [x] Update `NEW_MARKET_SOP.md` for consolidated structure
 
 ---
 
@@ -488,11 +488,11 @@ Target protocols for LP token collateral markets. The play: deposit LP tokens as
 
 ## USND / USDC — Arbitrum (Chain 42161)
 
-**Status: TODO.** Standard ERC-4626 or Chainlink-priced market. No custom contracts expected. Follow the `new_market.md` SOP.
+**Status: TODO.** Standard ERC-4626 or Chainlink-priced market. No custom contracts expected. Follow the `NEW_MARKET_SOP.md` SOP.
 
 **Chain:** Arbitrum (42161)
 **Market:** Borrow USDC against USND collateral (or cross-margin TBD)
-**SOP:** `new_market.md` — Phase 0 through Phase 5
+**SOP:** `NEW_MARKET_SOP.md` — Phase 0 through Phase 5
 
 ### Deployment Checklist
 
