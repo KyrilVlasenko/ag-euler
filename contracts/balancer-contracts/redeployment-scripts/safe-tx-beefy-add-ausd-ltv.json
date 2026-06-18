@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "chainId": "143",
+  "createdAt": 1781739172644,
+  "meta": {
+    "name": "Add Beefy wrapper collateral to AUSD borrow vault",
+    "description": "Set AUSD borrow vault LTVs for the Beefy wrapper collateral EVault at 95% borrow LTV and 96% liquidation LTV."
+  },
+  "transactions": [
+    {
+      "to": "0x438cedcE647491B1d93a73d491eC19A50194c222",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xf18f3BC9440ad7940E6E2a86fD0C724AdD2dd0Aa",
+        "borrowLTV": "9500",
+        "liquidationLTV": "9600",
+        "rampDuration": "0"
+      }
+    }
+  ]
+}
