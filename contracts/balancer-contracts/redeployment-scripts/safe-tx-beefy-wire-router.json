@@ -1,0 +1,61 @@
+{
+  "version": "1.0",
+  "chainId": "143",
+  "createdAt": 1781739172639,
+  "meta": {
+    "name": "Wire EulerRouter for Beefy wrapper collateral",
+    "description": "Resolve the Beefy collateral EVault to the Beefy wrapper, and resolve the Beefy wrapper to its Pool 1 BPT asset. No oracle config is added because Pool 1 BPT/AUSD is already configured."
+  },
+  "transactions": [
+    {
+      "to": "0x77C3b512d1d9E1f22EeCde73F645Da14f49CeC73",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "resolved",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xf18f3BC9440ad7940E6E2a86fD0C724AdD2dd0Aa",
+        "resolved": "true"
+      }
+    },
+    {
+      "to": "0x77C3b512d1d9E1f22EeCde73F645Da14f49CeC73",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "resolved",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x6e58131ea11ed990d4b62476529cf2502fe0ec5f",
+        "resolved": "true"
+      }
+    }
+  ]
+}
