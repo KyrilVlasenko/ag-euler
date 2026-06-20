@@ -2,6 +2,13 @@
 
 AI context file for the AG-Euler monorepo. For project overview see `README.md`. For task tracking see `TODO.md`. For the full deployment SOP see `NEW_MARKET_SOP.md`.
 
+## Secret Handling (Critical)
+
+- Never print, display, search-output, log, copy, or otherwise expose secret values from `.env` files, shell environments, credential stores, private-key files, API keys, seed phrases, or similar sources.
+- Never run commands that can return complete secret-bearing lines, such as searching `.env` contents for `PRIVATE_KEY`, `API_KEY`, `SECRET`, or token variables.
+- When checking whether a secret is configured, inspect only variable names or return a redacted boolean/status. Secret values must remain unread and unprinted.
+- If a command could expose a secret in tool output, use a safer redacted method or stop and ask the user.
+
 **Per-partner contract context:**
 - Cork: `contracts/cork-contracts/cork-AGENTS.md`
 - Balancer: `contracts/balancer-contracts/balancer-AGENTS.md`

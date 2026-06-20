@@ -1,0 +1,7 @@
+forge-std/=../balancer-contracts/lib/forge-std/src/
+euler-price-oracle/=../../reference/euler-price-oracle/src/
+ethereum-vault-connector/=../../reference/ethereum-vault-connector/src/
+euler-vault-kit/=../../reference/euler-vault-kit/src/
+evk-periphery/=../../reference/evk-periphery/src/
+euler-interfaces/=../../reference/euler-interfaces/
+
