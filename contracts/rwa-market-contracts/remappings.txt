@@ -1,0 +1,4 @@
+forge-std/=../../reference/euler-price-oracle/lib/forge-std/src/
+euler-price-oracle/=../../reference/euler-price-oracle/src/
+@solady/=../../reference/euler-price-oracle/lib/solady/src/
+@openzeppelin/contracts/=../../reference/euler-price-oracle/lib/openzeppelin-contracts/contracts/

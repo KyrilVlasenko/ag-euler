@@ -1,0 +1,16 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 20_000
+allow_paths = ["../../reference"]
+
+fs_permissions = [{ access = "read-write", path = "./" }]
+
+[etherscan]
+mainnet = { chain = "1", key = "${ETHERSCAN_API_KEY}", url = "https://api.etherscan.io/api" }

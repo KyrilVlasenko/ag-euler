@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1783105200000,
+  "meta": {
+    "name": "ETH RWA market - resolve sUSDat on existing EulerRouter",
+    "description": "Adds sUSDat as a resolved ERC4626 vault on the existing mAPOLLO/RWA market EulerRouter. Router governor is AlphaGrowth multisig 0x4f894Bfc9481110278C356adE1473eBe2127Fd3C. This enables router pricing resolution sUSDat -> USDat via convertToAssets; it does not list a vault, set LTVs, or change caps."
+  },
+  "transactions": [
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xD166337499E176bbC38a1FBd113Ab144e5bd2Df7",
+        "set": "true"
+      }
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1783272000000,
+  "meta": {
+    "name": "ETH RWA market - wire shared EulerRouter routes",
+    "description": "Single Safe payload for the shared mAPOLLO/RWA market EulerRouter. Includes resolving sUSDat as an ERC4626 vault, then wiring PAXG/USD, USDat/USD, reUSD/USD, reUSDe/USD, and USDS/USD oracle routes. Router governor is AlphaGrowth multisig 0x4f894Bfc9481110278C356adE1473eBe2127Fd3C. This payload only updates router routes/resolution; it does not list vaults, set LTVs, change caps, activate hooks, or transfer ownership."
+  },
+  "transactions": [
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xD166337499E176bbC38a1FBd113Ab144e5bd2Df7",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x45804880De22913dAFE09f4980848ECE6EcbAf78",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x0989ebAf631bFfAA86db86A0103E3FeA49Dfe966"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x23238f20b894f29041f48D88eE91131C395Aaa71",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0xD47934bE9636E2DA626B938D035ba41CE8422D2F"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x5086bf358635B81D8C47C66d1C8b9E567Db70c72",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x67EdBcBAB5ce6E082C9D495ee18F18131FABfE84"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0xdDC0f880ff6e4e22E4B74632fBb43Ce4DF6cCC5a",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x9E4eE05e921713b5Cc7660d0f682d80afB715e7d"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0xD0dAb9eDb2b1909802B03090eFBF14743E7Ff967"
+      }
+    }
+  ]
+}
