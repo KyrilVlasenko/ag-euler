@@ -1,0 +1,161 @@
+{
+  "version": "1.0",
+  "chainId": "1",
+  "createdAt": 1783371674000,
+  "meta": {
+    "name": "ETH RWA market - resolve new EVaults on shared EulerRouter",
+    "description": "Resolves the six newly deployed RWA EVault share tokens on the shared mAPOLLO/RWA market EulerRouter. Router governor is AlphaGrowth multisig 0x4f894Bfc9481110278C356adE1473eBe2127Fd3C. Execute this before enabling LTVs that use these EVaults as collateral."
+  },
+  "transactions": [
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x05E09415398659B19C5aeF202289270B37F1Fb31",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xd5020aad0CF1aB6F1c020Ba8b14B37e5Fb869F5B",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x7FDb59A3232F435c50B9108361E38674e25da87c",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x72a6D005374DB6B7975Fb5768A1802F5c0979474",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xF81b08Cb4669049049B9C2A38c7D27d480655Bb3",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x3643E21087B7a6D3128AB4Ba35310ba0E7628504",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xd4CCf87cBfe6c1f1390706667917b5FD3Ceb43BB",
+        "set": "true"
+      }
+    }
+  ]
+}

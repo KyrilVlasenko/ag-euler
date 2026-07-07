@@ -59,7 +59,7 @@ contract USDatCurveEMAOracleForkTest is Test {
     }
 
     function testStaleEMAReverts() external {
-        uint256 updatedAt = ICurveEMAPool(CURVE_POOL).ma_last_time() >> 128;
+        uint256 updatedAt = uint128(ICurveEMAPool(CURVE_POOL).ma_last_time());
         vm.warp(updatedAt + MAX_STALENESS + 1);
 
         vm.expectRevert();

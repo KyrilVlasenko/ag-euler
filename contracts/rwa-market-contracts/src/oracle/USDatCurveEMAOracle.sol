@@ -34,7 +34,8 @@ contract USDatCurveEMAOracle is BaseAdapter {
     uint256 public immutable maxStaleness;
 
     constructor(address _base, address _quote, address _pool, uint256 _emaIndex, uint256 _maxStaleness) {
-        if (_base == address(0) || _quote == address(0) || _pool == address(0) || _maxStaleness == 0) {
+        if (_base == address(0) || _quote == address(0) || _pool == address(0) || _emaIndex != 0 || _maxStaleness == 0)
+        {
             revert Errors.PriceOracle_InvalidConfiguration();
         }
 
@@ -62,7 +63,7 @@ contract USDatCurveEMAOracle is BaseAdapter {
         uint256 ema = ICurveEMAPool(pool).price_oracle(emaIndex);
         if (ema == 0) revert Errors.PriceOracle_InvalidAnswer();
 
-        uint256 updatedAt = _maLastTime(emaIndex);
+        uint256 updatedAt = _maLastTime();
         if (updatedAt == 0 || updatedAt > block.timestamp) revert Errors.PriceOracle_InvalidAnswer();
 
         uint256 staleness = block.timestamp - updatedAt;
@@ -75,10 +76,8 @@ contract USDatCurveEMAOracle is BaseAdapter {
         return FixedPointMathLib.fullMulDiv(inAmount, ema, 1e18);
     }
 
-    function _maLastTime(uint256 index) internal view returns (uint256) {
-        uint256 packed = ICurveEMAPool(pool).ma_last_time();
-        if (index == 0) return packed >> 128;
-        if (index == 1) return uint128(packed);
-        revert Errors.PriceOracle_InvalidConfiguration();
+    function _maLastTime() internal view returns (uint256) {
+        // StableSwap-NG packs price MA time in the lower 128 bits and D MA time in the upper 128 bits.
+        return uint128(ICurveEMAPool(pool).ma_last_time());
     }
 }
