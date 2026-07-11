@@ -1,0 +1,122 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1783541700000,
+  "meta": {
+    "name": "Base RWA ST0x - add collateral to existing eUSDC vault",
+    "description": "Allows the existing AlphaGrowth Base RWA eUSDC vault 0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E to accept the new wtSPYM, wtMSTR, and wtCOIN EVaults as collateral. Execute after 05-wire-st0x-router.json and after confirming all three new EVault share tokens quote through the shared router. This payload intentionally does not change the eUSDC max liquidation discount, which remains 10%."
+  },
+  "transactions": [
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+        "borrowLTV": "8000",
+        "liquidationLTV": "8500",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+        "borrowLTV": "7000",
+        "liquidationLTV": "8000",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+        "borrowLTV": "7000",
+        "liquidationLTV": "8000",
+        "rampDuration": "0"
+      }
+    }
+  ]
+}

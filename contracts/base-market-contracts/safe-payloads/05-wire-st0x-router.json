@@ -1,0 +1,179 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1783541700000,
+  "meta": {
+    "name": "Base RWA ST0x - wire DIA adapters and resolve vaults",
+    "description": "Adds wtSPYM/USD, wtMSTR/USD, and wtCOIN/USD DIA custom adapters to the existing AlphaGrowth Base RWA shared EulerRouter, then resolves the new ST0x EVaults as ERC4626 vaults. Router governor is AlphaGrowth Safe 0x4f894Bfc9481110278C356adE1473eBe2127Fd3C. This payload does not set LTVs, change caps, activate hooks, change liquidation discounts, or transfer governance."
+  },
+  "transactions": [
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x31C2C14134e6E3B7ef9478297F199331133Fc2d8",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x1D081e53B243D9d18AeDC9cA41b54dDEA22Fd4E9"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0xFF05E1bD696900dc6A52CA35Ca61Bb1024eDa8e2",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x77334F006fBE72f07EE536F43cc370f13D417291"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x5cDa0E1CA4ce2af96315f7F8963C85399c172204",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0xe2c2f533861E34df2f95B664a789583dBd194A74"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+        "set": "true"
+      }
+    }
+  ]
+}
