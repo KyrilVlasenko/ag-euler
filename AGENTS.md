@@ -36,6 +36,23 @@ reference/                           ← Upstream Euler repos (EVC, EVK, price o
 
 ---
 
+## Euler documentation
+
+Euler documentation is available locally at:
+
+- `reference/euler-docs/` — individual source Markdown pages and assets
+- `reference/euler-docs-deployed/llms-full.md` — deployed documentation snapshot
+- `reference/euler-docs-deployed/llms-index.md` — page index
+
+Before answering questions or modifying Euler integrations:
+
+1. Search these files for the relevant contracts, concepts, and examples.
+2. Prefer the individual source pages for focused reading.
+3. Cross-check against `llms-full.md` when deployment freshness matters.
+4. Do not modify files under `reference/euler-docs*`.
+
+---
+
 ## Labels Architecture (Critical)
 
 **Vault visibility is controlled by the labels layer, not the subgraph.** The subgraph returns all Euler vaults on a chain. The frontend filters to only vaults listed in the labels repo's `products.json`.

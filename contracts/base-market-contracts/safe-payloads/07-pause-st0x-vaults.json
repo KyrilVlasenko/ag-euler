@@ -1,0 +1,86 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1783886400000,
+  "meta": {
+    "name": "Base RWA ST0x - pause new vaults",
+    "description": "Emergency-pauses the three new ST0x EVaults by setting hookConfig to address(0), 32767. This disables all EVault operations on wtSPYM, wtMSTR, and wtCOIN vaults until governance reactivates them with setHookConfig(address(0), 0)."
+  },
+  "transactions": [
+    {
+      "to": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "newHookTarget",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "newHookedOps",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setHookConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newHookTarget": "0x0000000000000000000000000000000000000000",
+        "newHookedOps": "32767"
+      }
+    },
+    {
+      "to": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "newHookTarget",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "newHookedOps",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setHookConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newHookTarget": "0x0000000000000000000000000000000000000000",
+        "newHookedOps": "32767"
+      }
+    },
+    {
+      "to": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "newHookTarget",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "newHookedOps",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setHookConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "newHookTarget": "0x0000000000000000000000000000000000000000",
+        "newHookedOps": "32767"
+      }
+    }
+  ]
+}

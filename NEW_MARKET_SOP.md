@@ -118,6 +118,24 @@ reference/euler-interfaces/addresses/<chainId>/EulerSwapAddresses.json   # Euler
 
 Update the submodule before starting: `cd reference/euler-interfaces && git pull origin master`.
 
+### 0.6 Mandatory Euler Attack Vector Review
+
+Before deploying any new market or adding collateral to an existing cluster, check the proposed design against the potential vulnerabilities listed in Euler's docs under **Attack Vectors**:
+
+```
+reference/euler-docs-deployed/llms-full.md
+reference/euler-docs/
+```
+
+At minimum:
+
+1. Search the local docs for `Attack Vectors`, `donation attacks`, the collateral token standard, the oracle type, and any custom adapter/hook pattern being used.
+2. Review every vulnerability and mitigation listed under the deployed docs' **Attack Vectors** section, including linked source pages if they exist locally.
+3. For ERC-4626 collateral, explicitly assess donation/exchange-rate manipulation risk, especially anywhere the oracle route relies on `convertToAssets()`.
+4. Record the review result and any required mitigations in the partner deployment notes before proceeding to production configuration.
+
+Do not launch a market with an unreviewed or unresolved attack-vector finding.
+
 ---
 
 ## Euler V2 Core Address Quick Reference
@@ -842,6 +860,7 @@ intrinsicApySources: [
 - [ ] Every adapter's base, quote, feed/source, and staleness match the deployment worksheet
 - [ ] Every adapter quote matches its source and an independent reference within the approved tolerance
 - [ ] Every router route resolves for both underlying assets and vault-share collateral
+- [ ] **Euler Attack Vectors review completed** — all potential vulnerabilities listed under the docs' Attack Vectors section were checked against this deployment, and mitigations are documented
 - [ ] **Markets activated** — `setHookConfig(address(0), 0)` called on ALL borrow vaults. Verify: `cast call <vault> "hookConfig()(address,uint32)"` returns `0` for the second value.
 - [ ] Vaults appear in frontend (check `products.json` is fetched correctly)
 - [ ] Entity logos render (check `entities.json` + `logo/` directory)
