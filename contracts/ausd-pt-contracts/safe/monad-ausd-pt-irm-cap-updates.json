@@ -1,0 +1,102 @@
+{
+  "version": "1.0",
+  "chainId": "143",
+  "createdAt": 1784505600000,
+  "meta": {
+    "name": "Monad AlphaGrowth AUSD PT IRM and Cap Updates",
+    "description": "Update AUSD-PT/AUSD and earnAUSD-PT/AUSD borrow-vault IRMs; increase PT collateral supply caps to 35M and 5M respectively.",
+    "txBuilderVersion": "1.18.0",
+    "createdFromSafeAddress": "0x4f894Bfc9481110278C356adE1473eBe2127Fd3C",
+    "createdFromOwnerAddress": ""
+  },
+  "transactions": [
+    {
+      "to": "0x248C74aA002A571c340a3d894aAF294884A49bE1",
+      "value": "0",
+      "data": "0x8bcd4016000000000000000000000000dc7f5a2475426df6773532007a5abf80252d9206",
+      "contractMethod": {
+        "name": "setInterestRateModel",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "irm",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "irm": "0xDc7f5A2475426DF6773532007A5abF80252d9206"
+      }
+    },
+    {
+      "to": "0x7cc566d100E81a9708fd23B18F6B92D3249430C9",
+      "value": "0",
+      "data": "0x8bcd40160000000000000000000000006de68f97ad03577085553776c414b0aa0d0b4eba",
+      "contractMethod": {
+        "name": "setInterestRateModel",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "irm",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "irm": "0x6de68F97AD03577085553776C414b0aA0d0b4ebA"
+      }
+    },
+    {
+      "to": "0xf3E55a17c4c59Cb70EA44973795fA8F3c3BAad72",
+      "value": "0",
+      "data": "0xd87f780f000000000000000000000000000000000000000000000000000000000000578d0000000000000000000000000000000000000000000000000000000000000006",
+      "contractMethod": {
+        "name": "setCaps",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "supplyCap": "22413",
+        "borrowCap": "6"
+      }
+    },
+    {
+      "to": "0xC4fAbE0B5A280163aB47E3162689A278C81df3f9",
+      "value": "0",
+      "data": "0xd87f780f0000000000000000000000000000000000000000000000000000000000007d0c0000000000000000000000000000000000000000000000000000000000000006",
+      "contractMethod": {
+        "name": "setCaps",
+        "payable": false,
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ]
+      },
+      "contractInputsValues": {
+        "supplyCap": "32012",
+        "borrowCap": "6"
+      }
+    }
+  ]
+}

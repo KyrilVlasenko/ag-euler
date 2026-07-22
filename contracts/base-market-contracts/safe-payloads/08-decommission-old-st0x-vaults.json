@@ -1,0 +1,308 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1784161315000,
+  "meta": {
+    "name": "Base RWA ST0x - decommission old reciprocal vault setup",
+    "description": "Decommissions the old wtSPYM, wtMSTR, and wtCOIN EVault setup by zeroing LTVs in both directions and setting each old ST0x vault supply and borrow cap to raw 1. Raw cap 1 resolves to an actual zero cap; raw cap 0 would mean unlimited. This payload does not full-pause the old vaults and does not transfer governance."
+  },
+  "transactions": [
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+        "borrowLTV": "0",
+        "liquidationLTV": "0",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "1"
+      }
+    },
+    {
+      "to": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "1"
+      }
+    },
+    {
+      "to": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "supplyCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "borrowCap",
+            "type": "uint16",
+            "internalType": "uint16"
+          }
+        ],
+        "name": "setCaps",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "supplyCap": "1",
+        "borrowCap": "1"
+      }
+    }
+  ]
+}

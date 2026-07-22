@@ -1,0 +1,365 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1784336334000,
+  "meta": {
+    "name": "Base RWA ST0x - wire collateral-only replacement vaults",
+    "description": "Wires the replacement collateral-only wtSPYM, wtMSTR, and wtCOIN EVaults into the existing AlphaGrowth Base RWA market. Updates the shared EulerRouter to use Euler AggregatorV3 adapters, removes deprecated ST0x vaults from router resolution, resolves the replacement vaults, and lets the existing eUSDC vault accept the replacement vaults as collateral. Execute after old ST0x vault LTVs/caps are decommissioned. This payload does not activate hooks, set IRMs, set reverse LTVs, change caps, or transfer governance."
+  },
+  "transactions": [
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x31C2C14134e6E3B7ef9478297F199331133Fc2d8",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0xf366D1ED3D8AdD33B26fCE0FC9d8643849AadF53"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0xFF05E1bD696900dc6A52CA35Ca61Bb1024eDa8e2",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x49467289668F3985386b43C7Fa1F02ce09325761"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "base",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "quote",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "oracle",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "name": "govSetConfig",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "base": "0x5cDa0E1CA4ce2af96315f7F8963C85399c172204",
+        "quote": "0x0000000000000000000000000000000000000348",
+        "oracle": "0x21D6A2773c6AdD17234F6326b60B6b958E4859f8"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x67aF8ff5B13e9E697aa461e866fe0f41f68493c3",
+        "set": "false"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xb5A2fDa01456Aee7437e740b73ae8fB77fb135dB",
+        "set": "false"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xc572516b2eA4613d1f206B1f47309d310fA452Ac",
+        "set": "false"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xd54d33dA9C326AEE7513cEFdedA5c93a41809caD",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0xD864d46c62685A6062A722AFD7C8c978c410aAaF",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0xc0A9A8cdafb7490476F11ef85d1208434b59f3C8",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "vault",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "set",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ],
+        "name": "govSetResolvedVault",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "vault": "0x2645CBAF62F2f336B0e988375d7e6bCAb66A296C",
+        "set": "true"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xd54d33dA9C326AEE7513cEFdedA5c93a41809caD",
+        "borrowLTV": "8000",
+        "liquidationLTV": "8500",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0xD864d46c62685A6062A722AFD7C8c978c410aAaF",
+        "borrowLTV": "7000",
+        "liquidationLTV": "8000",
+        "rampDuration": "0"
+      }
+    },
+    {
+      "to": "0x4C1aeda9B43EfcF1da1d1755b18802aAbe90f61E",
+      "value": "0",
+      "data": null,
+      "contractMethod": {
+        "inputs": [
+          {
+            "name": "collateral",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "liquidationLTV",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "rampDuration",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ],
+        "name": "setLTV",
+        "payable": false
+      },
+      "contractInputsValues": {
+        "collateral": "0x2645CBAF62F2f336B0e988375d7e6bCAb66A296C",
+        "borrowLTV": "7000",
+        "liquidationLTV": "8000",
+        "rampDuration": "0"
+      }
+    }
+  ]
+}
