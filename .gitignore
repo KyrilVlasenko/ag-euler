@@ -48,7 +48,6 @@ euler-lite-origin/
 # --- Reference Repos (standalone clones, not submodules) ---
 reference/*
 !reference/funding-rate-calculator.md
-!reference/ag-playbooks/
 
 # --- Labels Repos (standalone, managed independently) ---
 balancer-labels/
@@ -58,6 +57,16 @@ origin-labels/
 # --- Euler Labels Fork (standalone repo) ---
 euler-labels/
 
-# --- Local action plan file ---
+# --- Internal Planning / Operational State ---
 ACTION_PLAN.md
+TODO.md
+pending-markets.md
+
+# --- Internal Operational Playbooks ---
 reference/ag-playbooks/
+
+# --- Active Deployment / Migration Plans ---
+contracts/**/redeployment-scripts/*PLAN*.md
+
+# --- Generated / Staged Safe Transactions ---
+contracts/**/safe-tx-*.json

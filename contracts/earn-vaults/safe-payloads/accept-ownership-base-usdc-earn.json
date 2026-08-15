@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "chainId": "8453",
+  "createdAt": 1785184613970,
+  "meta": {
+    "name": "AlphaGrowth Base USDC Earn - accept ownership",
+    "description": "Accept ownership of the AlphaGrowth Earn USDC vault on Base from the AlphaGrowth multisig.",
+    "txBuilderVersion": "1.18.0",
+    "createdFromSafeAddress": "0x4f894Bfc9481110278C356adE1473eBe2127Fd3C",
+    "createdFromOwnerAddress": ""
+  },
+  "transactions": [
+    {
+      "to": "0xC72F073A311e037d4bc909FedAE94De38494EE5b",
+      "value": "0",
+      "data": "0x79ba5097",
+      "contractMethod": {
+        "name": "acceptOwnership",
+        "payable": false,
+        "inputs": []
+      },
+      "contractInputsValues": {}
+    }
+  ]
+}
