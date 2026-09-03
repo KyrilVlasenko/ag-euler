@@ -20,8 +20,14 @@ Finalize and launch ZRO, VVV, and AERO markets on Base.
 [] Add logos to tokens on Rewards tab
 
 ## New issues
-[] need to use adapter for AUSD -> loANZD BPT on swap-and-withdraw here: http://localhost:3000/lend/0x438cedcE647491B1d93a73d491eC19A50194c222/0/withdraw?network=143
-[] use adapter everywhere where AUSD ->loANZD BPT route is needed: Borrow, Multiply, Supply collateral, withdraw AUSD - SHOULD BE FIXED ONCE NEW loANZD COLLATERAL IS LINKED TO AUSD POOL
+[] need to use adapter for AUSD -> loANZD BPT on swap-and-withdraw and swap-and-supply here:
+  [] http://localhost:3000/lend/0x438cedcE647491B1d93a73d491eC19A50194c222/0/withdraw?network=143
+  [] http://localhost:3000/position/17/supply?collateral=0x2067936155c7DB57b1cdCF776B04B9678c245626&network=143
+  [] http://localhost:3000/lend/0x2067936155c7DB57b1cdCF776B04B9678c245626/0/withdraw?network=143
+  [] http://localhost:3000/position/18/repay?network=143
+[x] use adapter everywhere where AUSD ->loANZD BPT route is needed: Borrow, Multiply, Supply collateral, withdraw AUSD - SHOULD BE FIXED ONCE NEW loANZD COLLATERAL IS LINKED TO AUSD POOL
+[x] Net APY % is not displayed on position borrow pages: http://localhost:3000/position/19/borrow?network=143
+
 
 ## If have time:
 [] update token names to drop "wn" prefixes: AUSD-USDC-USDT0
@@ -71,3 +77,113 @@ Issues
   [x] risk curator is unknown - should be AG - fixed on our FE, might be cashed on EULER's FE
   [x] vault type is unknown - should be governed - fixed on our FE, might be cashed on EULER's FE
   [] NEED TO CHECK reUSD VAULT CODE FOR ALL THESE --^
+
+## Latest issues
+[x] Incentives are being doublecounded on AUSD borrow vault: it counts merkl rewards + the same merkl rewards from Balancer via Defillama. Need to enable merkl rewards, and only track yiled form yieldbaring tokens from Balancer.
+[x] Price impact on loAZND borrow vault is too high - it's not an actual nubmer, so need to disable
+[] IR curves are too high. need to decrease to 8% and 80% for AUSD, and 16% and 80% for WMON
+
+
+# BASE AI MARKET LAUNCH
+[] Check drop twenty and SUPPLY caps for each asset
+  [] VVV: 330,000	($6.85M)
+  [x] VIRTUAL: 3,300,000 ($2.44M)
+  [] MOR: 18,000 ($40k)
+  [] ZRO: 180,000	($230k)
+  [x] AERO: 15,000,000 ($5,55M)
+  [] USDC: 10,000,000 ($10M)
+  [] WETH: 5,500 ($10M)
+[] Check drop twenty and BORROW caps for each asset
+  [] VVV: 170,000	($4.5M)
+  [] VIRTUAL: 2,250,000 ($2M)
+  [] MOR: 11,500 ($35k)
+  [] ZRO: 74,000 ($120k)
+  [] AERO: 15,000,000 ($5.55M)
+  [] USDC: 10,000,000 ($10M)
+  [] WETH: 5,500 ($10M)
+[] Check LTVs and LLTV based on price volatility of each asset
+  [] VVV: LTV: 80, LLTV 85, Bonus: 15
+  [] VIRTUAL: LTV: 80, LLTV 85, Bonus: 15
+  [] MOR: LTV: 75, LLTV 80, Bonus: 15
+  [] ZRO: LTV: 80, LLTV 85, Bonus: 15
+  [] AERO: LTV: 80, LLTV 85, Bonus: 15
+  [] USDC/ETH: LTV: 85, LLTV 87, Bonus: 15
+  [] USDC/other tokens: LTV: 80, LLTV 85, Bonus: 15
+  [] WETH/USDC: LTV: 85, LLTV 87, Bonus: 15
+  [] WETH/other tokens: LTV: 80, LLTV 85, Bonus: 15
+[] Check IR curves for each asset (kink, borrow@base, @kink, @max)
+  [] VVV: 90% kink, 0% @base, 12% @kink, 120% @max  
+  [] VIRTUAL: 90% kink, 0% @base, 12% @kink, 100% @max  
+  [] MOR: 90% kink, 0% @base, 12% @kink, 100% @max
+  [] ZRO: 90% kink, 0% @base, 10% @kink, 100% @max  
+  [] AERO: 90% kink, 0% @base, 16% @kink, 120% @max
+  [] USDC: 90% kink, 0% @base, 8% @kink, 100% @max
+  [] WETH: 90% kink, 0% @base, 4% @kink, 80% @max
+[x] Launch local frontend and see the current market configuration. 
+[] Add MOR to the mix - NEED ORACLE
+  [] Deploy MOR vault
+  [] Link it with USDC and ETH collateral
+[x] Configure all marekts
+  [x] Ping brian to sell in the first transaction. 
+  [x] Sign second transaction to configure all markets. 
+[x] Check and update labels on all markets 
+[x] Test everything on local frontend. 
+[] Ask Euler to whitelist all new markets
+
+# 0G MORPHO MARKET LAUNCH
+[x] Check what Vault owner can do. 
+  [x] If it has any control over the vault or allocation, ask Kyle to transfer ownership to AlphaGrowth multisig - WAITING
+[x] Confirm LLTV rates for all assets 
+  [x] W0G: 86%
+  [x] USDC: 94%
+[x] Confirm supply caps for each asset 
+  [x] W0G: 
+  [x] USDC: 
+[] Ask Oku to list new vaults on their frontend 
+[] Set up a call with 0G team
+
+# MONAD AUSD/AUSD-PT MARKET
+[] Addresses
+  [] AUSD token: https://monadscan.com/token/0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a
+  [] Pendle AUSD PT token: https://monadscan.com/address/0x9fc74f8ed616b5baf52a170caa97d6d3898602d1
+[] Oracles
+  [] Unit of account: AUSD token: https://monadscan.com/token/0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a
+  [] AUSD token - no oracle needed, already in the unit of account
+  [] Pendle AUSD-PT token - pendle oracle (need to figure out)
+[] Collaterals
+  [] Pendle AUSD PT token
+[] Borrow assets
+  [] AUSD token
+[] Supply caps
+  [] AUSD token - unlimited
+  [] Pendle AUSD PT token - $6M
+[] Borrow caps
+  [] AUSD token - unlimited
+  [] Pendle AUSD PT token - 0
+[] LTVs / LLTVs / Max liq. bonus
+  [] Pendle AUSD PT token: 90/94/15
+[] IRM curves (kink %, borrow rate at 0%, at kink, at 100%)
+  [] AUSD/AUSD-PT: kink at 90%, borrow rate: 0%, 6%, 50%
+  
+# MONAD AUSD/earnAUSD-PT MARKET
+[] Addresses
+  [] AUSD token: https://monadscan.com/token/0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a
+  [] Pendle earnAUSD PT token: https://monadscan.com/address/0xdaf216939826acaba0c2312f7e30a890213845cd
+[] Oracles
+  [] Unit of account: AUSD token: https://monadscan.com/token/0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a
+  [] AUSD token - no oracle needed, already in the unit of account
+  [] Pendle earnAUSD-PT token - pendle oracle (need to figure out)
+[] Collaterals
+  [] Pendle earnAUSD PT token
+[] Borrow assets
+  [] AUSD token
+[] Supply caps
+  [] AUSD token - unlimited
+  [] Pendle earnAUSD PT token - $2.5M
+[] Borrow caps
+  [] AUSD token - unlimited
+  [] Pendle earnAUSD PT token - 0
+[] LTVs / LLTVs / Max liq. bonus
+  [] Pendle earnAUSD PT token: 88/92/15
+[] IRM curves (kink %, borrow rate at 0%, at kink, at 100%)
+  [] AUSD/earnAUSD-PT: kink at 90%, borrow rate: 0%, 12%, 60%
