@@ -120,19 +120,26 @@ Update the submodule before starting: `cd reference/euler-interfaces && git pull
 
 ### 0.6 Mandatory Euler Attack Vector Review
 
-Before deploying any new market or adding collateral to an existing cluster, check the proposed design against the potential vulnerabilities listed in Euler's docs under **Attack Vectors**:
+Before deploying any new market or adding collateral to an existing cluster, complete the repository's canonical market security checklist:
+
+```
+security/attack-vectors.md
+```
+
+The checklist consolidates the attack vectors and mitigations described across Euler's deployed documentation. Use the following local sources to check for upstream additions or changes:
 
 ```
 reference/euler-docs-deployed/llms-full.md
 reference/euler-docs/
 ```
 
-At minimum:
+Required process:
 
-1. Search the local docs for `Attack Vectors`, `donation attacks`, the collateral token standard, the oracle type, and any custom adapter/hook pattern being used.
-2. Review every vulnerability and mitigation listed under the deployed docs' **Attack Vectors** section, including linked source pages if they exist locally.
-3. For ERC-4626 collateral, explicitly assess donation/exchange-rate manipulation risk, especially anywhere the oracle route relies on `convertToAssets()`.
-4. Record the review result and any required mitigations in the partner deployment notes before proceeding to production configuration.
+1. Copy the review-record table from `security/attack-vectors.md` into the partner deployment notes.
+2. Give every attack-vector row a disposition and supporting evidence; a `Not applicable` finding must include a reason.
+3. Search the local Euler docs for `Attack Vectors`, `donation attacks`, the collateral token standard, the oracle type, and every custom adapter, hook, controller, operator, or swap pattern being used. Add any newly documented vector to the checklist.
+4. For ERC-4626 collateral, explicitly assess donation/exchange-rate manipulation risk, especially anywhere the oracle route relies on `convertToAssets()`.
+5. Resolve all `Blocked` findings and verify that every mitigation matches the deployed on-chain configuration before proceeding to production configuration.
 
 Do not launch a market with an unreviewed or unresolved attack-vector finding.
 
@@ -860,7 +867,7 @@ intrinsicApySources: [
 - [ ] Every adapter's base, quote, feed/source, and staleness match the deployment worksheet
 - [ ] Every adapter quote matches its source and an independent reference within the approved tolerance
 - [ ] Every router route resolves for both underlying assets and vault-share collateral
-- [ ] **Euler Attack Vectors review completed** — all potential vulnerabilities listed under the docs' Attack Vectors section were checked against this deployment, and mitigations are documented
+- [ ] **Euler Attack Vectors review completed** — every row in `security/attack-vectors.md` has a disposition and evidence in the partner deployment notes, no `Blocked` finding remains, and all mitigations match the deployed configuration
 - [ ] **Markets activated** — `setHookConfig(address(0), 0)` called on ALL borrow vaults. Verify: `cast call <vault> "hookConfig()(address,uint32)"` returns `0` for the second value.
 - [ ] Vaults appear in frontend (check `products.json` is fetched correctly)
 - [ ] Entity logos render (check `entities.json` + `logo/` directory)

@@ -70,3 +70,4 @@ contracts/**/redeployment-scripts/*PLAN*.md
 
 # --- Generated / Staged Safe Transactions ---
 contracts/**/safe-tx-*.json
+assets-dd/
